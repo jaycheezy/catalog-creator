@@ -1,0 +1,27 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "catalog-forge",
+	"compatibility_date": "2026-08-31",
+	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+	"main": ".open-next/worker.js",
+	"assets": {
+		"directory": ".open-next/assets",
+		"binding": "ASSETS"
+	},
+	"services": [
+		{
+			"binding": "WORKER_SELF_REFERENCE",
+			"service": "catalog-forge"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "TEMPLATES_BUCKET",
+			"bucket_name": "catalog-forge-templates"
+		},
+		{
+			"binding": "RENDERS_BUCKET",
+			"bucket_name": "catalog-forge-renders"
+		}
+	]
+}

@@ -1,0 +1,14 @@
+{
+  "/_not-found/page": "/_not-found",
+  "/_global-error/page": "/_global-error",
+  "/api/preview/route": "/api/preview",
+  "/api/render/route": "/api/render",
+  "/favicon.ico/route": "/favicon.ico",
+  "/api/feed/route": "/api/feed",
+  "/api/templates/route": "/api/templates",
+  "/board/page": "/board",
+  "/editor/page": "/editor",
+  "/page": "/",
+  "/story-map/page": "/story-map",
+  "/validate/page": "/validate"
+}
