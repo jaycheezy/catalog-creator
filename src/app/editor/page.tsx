@@ -147,19 +147,45 @@ export default function EditorPage() {
   const [showAllSizes, setShowAllSizes] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedId, setSavedId] = useState<string | null>(null);
+  const [savedToken, setSavedToken] = useState<string | null>(null);
+  const [apiKey, setApiKey] = useState("");
+
+  useEffect(() => {
+    try {
+      const k = localStorage.getItem("catalog-forge-api-key");
+      if (k) setApiKey(k);
+    } catch {}
+  }, []);
+  useEffect(() => {
+    try {
+      if (apiKey) localStorage.setItem("catalog-forge-api-key", apiKey);
+    } catch {}
+  }, [apiKey]);
 
   const saveToServer = async () => {
     setSaving(true);
     try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (apiKey) headers["x-api-key"] = apiKey;
       const res = await fetch("/api/templates", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify(active),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Save failed");
       setSavedId(json.id);
-      // keep id in sync
+      if (json.token) setSavedToken(json.token);
+      // If token not returned but secret is set, fetch signed URL
+      if (!json.token && json.id) {
+        const signHeaders: Record<string, string> = {};
+        if (apiKey) signHeaders["x-api-key"] = apiKey;
+        const signRes = await fetch(`/api/templates?id=${encodeURIComponent(json.id)}&sign=1&domain=${encodeURIComponent(domain)}`, { headers: signHeaders });
+        if (signRes.ok) {
+          const signJson = await signRes.json();
+          if (signJson.token) setSavedToken(signJson.token);
+        }
+      }
       if (json.id !== active.id) {
         setTemplates((prev) => prev.map((t) => (t.id === active.id ? { ...t, id: json.id } : t)));
         setActiveId(json.id);
@@ -182,11 +208,12 @@ export default function EditorPage() {
   };
 
   const handleExportPng = async () => {
-    // Try server render first if template saved
+    // Try server render first if template saved (include token if present)
     if (savedId && product) {
       const handle = product.link.split("/products/")[1]?.split("?")[0];
       if (handle) {
-        const url = `/api/render?templateId=${encodeURIComponent(savedId)}&handle=${encodeURIComponent(handle)}&domain=${encodeURIComponent(domain)}`;
+        const tokenParam = savedToken ? `&token=${encodeURIComponent(savedToken)}` : "";
+        const url = `/api/render?templateId=${encodeURIComponent(savedId)}&handle=${encodeURIComponent(handle)}&domain=${encodeURIComponent(domain)}${tokenParam}`;
         window.open(url, "_blank");
         return;
       }
@@ -288,6 +315,7 @@ export default function EditorPage() {
               <input value={domain} onChange={(e) => setDomain(e.target.value)} className="border rounded px-2 py-1 font-mono text-xs w-44" />
               <button onClick={fetchProducts} disabled={loading} className="px-3 py-1 bg-zinc-900 text-white rounded text-xs disabled:opacity-50">{loading ? "..." : "Load"}</button>
             </div>
+            <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="API key (if set)" className="border rounded px-2 py-1 text-xs w-28 font-mono" title="Set via wrangler secret put API_SECRET — required for Save in prod" />
             <select value={active.sizeId} onChange={(e) => changeSize(e.target.value)} className="border rounded px-2 py-1 text-xs">
               {SIZE_PRESETS.map((s) => (
                 <option key={s.id} value={s.id}>{s.label}</option>
@@ -477,26 +505,29 @@ export default function EditorPage() {
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-violet-900">Enriched Feed (server raster)</span>
             <span className="text-xs px-2 py-0.5 bg-violet-600 text-white rounded-full">Saved: {savedId}</span>
+            {savedToken && <span className="text-xs px-2 py-0.5 bg-green-600 text-white rounded-full">Signed</span>}
             <button
               onClick={() => {
-                const url = `${window.location.origin}/api/feed?domain=${encodeURIComponent(domain)}&templateId=${encodeURIComponent(savedId)}`;
+                const tokenParam = savedToken ? `&token=${encodeURIComponent(savedToken)}` : "";
+                const url = `${window.location.origin}/api/feed?domain=${encodeURIComponent(domain)}&templateId=${encodeURIComponent(savedId)}${tokenParam}`;
                 navigator.clipboard.writeText(url);
-                alert("Enriched feed URL copied");
+                alert("Enriched feed URL copied" + (savedToken ? " (signed)" : ""));
               }}
               className="ml-auto text-xs px-3 py-1 bg-violet-600 text-white rounded"
             >
               Copy Enriched Feed URL
             </button>
             <a
-              href={`/api/feed?domain=${encodeURIComponent(domain)}&templateId=${encodeURIComponent(savedId)}`}
+              href={`/api/feed?domain=${encodeURIComponent(domain)}&templateId=${encodeURIComponent(savedId)}${savedToken ? `&token=${encodeURIComponent(savedToken)}` : ""}`}
               target="_blank"
               className="text-xs px-3 py-1 border bg-white rounded"
             >
               Download CSV
             </a>
           </div>
-          <code className="block text-xs font-mono bg-white border rounded px-3 py-2 break-all">{`${typeof window !== "undefined" ? window.location.origin : ""}/api/feed?domain=${domain}&templateId=${savedId}`}</code>
-          <div className="text-[11px] text-violet-700">image_link now points to <code className="bg-white px-1 rounded">/api/render?templateId={savedId}&handle=...</code> — Meta will fetch PNGs rendered via next/og. Try one: {product && <a href={`/api/render?templateId=${savedId}&handle=${product.link.split("/products/")[1]?.split("?")[0]}&domain=${encodeURIComponent(domain)}`} target="_blank" className="underline">preview current product PNG</a>}</div>
+          <code className="block text-xs font-mono bg-white border rounded px-3 py-2 break-all">{`${typeof window !== "undefined" ? window.location.origin : ""}/api/feed?domain=${domain}&templateId=${savedId}${savedToken ? `&token=${savedToken.slice(0, 12)}…` : ""}`}</code>
+          <div className="text-[11px] text-violet-700">image_link now points to <code className="bg-white px-1 rounded">/api/render?templateId={savedId}&handle=...&token=...</code> — Meta will fetch PNGs rendered via next/og. Try one: {product && <a href={`/api/render?templateId=${savedId}&handle=${product.link.split("/products/")[1]?.split("?")[0]}&domain=${encodeURIComponent(domain)}${savedToken ? `&token=${encodeURIComponent(savedToken)}` : ""}`} target="_blank" className="underline">preview current product PNG</a>}</div>
+          {!savedToken && <div className="text-[11px] text-amber-700">No API_SECRET set — feed is public (dev). Set <code className="bg-white px-1 rounded">wrangler secret put API_SECRET</code> to enable signed URLs in prod.</div>}
         </div>
       )}
 

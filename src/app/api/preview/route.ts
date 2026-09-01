@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchShopifyProducts, getFilteredProducts, normalizeDomain } from "@/lib/shopify";
 import { productsToRows, getValidationIssues } from "@/lib/facebook";
+import { getClientIp, checkRateLimit } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
+  const ip = getClientIp(req);
+  const rl = checkRateLimit(`preview:${ip}`, 30);
+  if (!rl.ok) return NextResponse.json({ error: "Rate limited — 30 previews/min per IP" }, { status: 429 });
+
   const domain = req.nextUrl.searchParams.get("domain") || req.nextUrl.searchParams.get("store") || "";
 
   if (!domain) {

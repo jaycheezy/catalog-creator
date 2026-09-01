@@ -1,0 +1,5 @@
+# Copy to .dev.vars for local dev with auth, or set via Cloudflare:
+# npx wrangler secret put API_SECRET
+API_SECRET=change-me-to-a-long-random-string
+
+# Optional: also set via wrangler.jsonc vars for preview, but secret is preferred

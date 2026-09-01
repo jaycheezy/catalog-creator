@@ -2,13 +2,17 @@ import { ImageResponse } from "next/og";
 import { NextRequest } from "next/server";
 import { fetchShopifyProducts, normalizeDomain } from "@/lib/shopify";
 import { resolveBinding } from "@/editor/bindings";
+import { getSecret, verifyTemplateToken, getClientIp, checkRateLimit } from "@/lib/auth";
 import type { Template } from "@/editor/types";
 
 async function fetchTemplateViaHttp(req: NextRequest, id: string): Promise<Template | null> {
   try {
+    const secret = await getSecret();
+    const headers: Record<string, string> = {};
+    if (secret) headers["x-api-key"] = secret;
     // In edge, direct file access not available, fetch via HTTP to nodejs templates API
     const url = new URL(`/api/templates?id=${encodeURIComponent(id)}`, req.nextUrl.origin).toString();
-    const res = await fetch(url, { cache: "no-store" });
+    const res = await fetch(url, { headers, cache: "no-store" });
     if (!res.ok) return null;
     return (await res.json()) as Template;
   } catch {
@@ -17,14 +21,28 @@ async function fetchTemplateViaHttp(req: NextRequest, id: string): Promise<Templ
 }
 
 export async function GET(req: NextRequest) {
+  const secret = await getSecret();
+  // Rate limit: 60/min per IP for render (expensive)
+  const ip = getClientIp(req);
+  const rl = checkRateLimit(`render:${ip}`, 60);
+  if (!rl.ok) return new Response("Rate limited — 60 renders/min per IP", { status: 429, headers: { "Retry-After": "60" } });
+
   const { searchParams } = req.nextUrl;
   const templateId = searchParams.get("templateId") || searchParams.get("id");
   const templateParam = searchParams.get("template");
   const handle = searchParams.get("handle");
   const domain = searchParams.get("domain") || "store.gibun.at";
+  const token = searchParams.get("token");
 
   if (!handle) {
     return new Response("Missing ?handle=product-handle", { status: 400 });
+  }
+
+  // Enriched render requires token when secret is set
+  if (secret && templateId) {
+    if (!(await verifyTemplateToken(templateId, token, secret))) {
+      return new Response("Unauthorized — missing or invalid token. Save template to get signed URL with ?token=...", { status: 401 });
+    }
   }
 
   let template: Template | null = null;
