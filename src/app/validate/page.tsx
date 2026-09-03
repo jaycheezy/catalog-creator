@@ -78,7 +78,7 @@ export default function ValidatePage() {
           <div className="ml-auto flex gap-2">
             <a href="/" className="text-xs px-3 py-1 border rounded">Feed</a>
             <a href="/editor" className="text-xs px-3 py-1 border rounded">Editor</a>
-            <a href="/board" className="text-xs px-3 py-1 border rounded">Board</a>
+            <a href="/story-map" className="text-xs px-3 py-1 border rounded">Story Map</a>
           </div>
         </div>
       </header>

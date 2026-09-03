@@ -119,7 +119,6 @@ export default function StoryMapPage() {
           <div className="ml-auto flex items-center gap-2">
             <a href="/editor" className="text-xs px-3 py-1 border rounded">Editor</a>
             <a href="/validate" className="text-xs px-3 py-1 border rounded">Validate</a>
-            <a href="/board" className="text-xs px-3 py-1 border rounded">Board (old)</a>
             <button onClick={() => { if (confirm("Reset map to defaults?")) setCards(DEFAULT_CARDS); }} className="text-xs px-3 py-1 border rounded">Reset</button>
           </div>
         </div>
@@ -214,7 +213,7 @@ export default function StoryMapPage() {
 
         <div className="mt-3 flex flex-col sm:flex-row gap-2 text-xs text-zinc-500">
           <span>Click ✓ to mark done • Drag between rows/steps to reprioritize • Thin slice (top green row) is your walking skeleton — keep it shippable, improve quality in Enhance row where it lifts ROAS.</span>
-          <span className="sm:ml-auto">View: <a href="/board" className="underline">Board</a> • <a href="/validate" className="underline">Validate</a> • <a href="/editor" className="underline">Editor</a></span>
+          <span className="sm:ml-auto">View: <a href="/validate" className="underline">Validate</a> • <a href="/editor" className="underline">Editor</a></span>
         </div>
       </div>
     </div>

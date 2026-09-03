@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchShopifyProducts, getFilteredProducts, normalizeDomain } from "@/lib/shopify";
 import { productsToRows, getValidationIssues } from "@/lib/facebook";
-import { getClientIp, checkRateLimit } from "@/lib/auth";
+import { getClientIp, checkRateLimit, isAuthenticated } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
+  // Store product data is behind login (proxy redirects pages; this is the secure check).
+  if (!(await isAuthenticated(req))) {
+    return NextResponse.json({ error: "Not signed in — POST /api/login first", loginRequired: true }, { status: 401 });
+  }
+
   const ip = getClientIp(req);
   const rl = checkRateLimit(`preview:${ip}`, 30);
   if (!rl.ok) return NextResponse.json({ error: "Rate limited — 30 previews/min per IP" }, { status: 429 });

@@ -244,7 +244,6 @@ export default function Home() {
         <span>MVP scope: Shopify public <code>/products.json</code> → Facebook CSV. No edits — sync is source of truth.</span>
         <a href="/validate" className="underline">Validate</a>
         <a href="/story-map" className="underline">Story Map</a>
-        <a href="/board" className="underline">Board (old)</a>
       </footer>
       <Onboarding />
     </div>

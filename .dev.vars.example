@@ -1,5 +1,4 @@
-# Copy to .dev.vars for local dev with auth, or set via Cloudflare:
-# npx wrangler secret put API_SECRET
-API_SECRET=change-me-to-a-long-random-string
-
-# Optional: also set via wrangler.jsonc vars for preview, but secret is preferred
+# Copy to .dev.vars to lock template writes locally, or set in Cloudflare:
+# npx wrangler secret put ADMIN_PASSWORD
+# Leave unset for open dev mode. Feed/render URLs stay private share-links either way.
+ADMIN_PASSWORD=change-me-to-a-long-random-string

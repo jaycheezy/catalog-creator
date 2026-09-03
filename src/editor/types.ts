@@ -136,8 +136,15 @@ export const TEMPLATE_JSON_SCHEMA = {
 export function createDefaultTemplate(sizeId: string = "1:1"): Template {
   const preset = SIZE_PRESETS.find((s) => s.id === sizeId) ?? SIZE_PRESETS[0];
   const now = Date.now();
+  // Unguessable ID — feed/render URLs double as private share links for Meta.
+  let id = `tpl_${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`.slice(0, 32);
+  try {
+    if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+      id = `tpl_${(crypto as Crypto).randomUUID().replace(/-/g, "")}`;
+    }
+  } catch {}
   return {
-    id: `tpl_${Math.random().toString(36).slice(2, 9)}`,
+    id,
     name: "Gibun Template 1",
     sizeId: preset.id,
     width: preset.width,

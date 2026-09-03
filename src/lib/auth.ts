@@ -1,8 +1,12 @@
-// Auth helpers — works in edge (Web Crypto) + nodejs (Node crypto)
+// Simple single-password auth + capability URLs for Meta reads.
+// - Humans (editor UI, POST /api/templates, GET ?list=1) auth via ADMIN_PASSWORD cookie session.
+// - Meta's fetcher can't log in, so /api/feed?templateId= and /api/render?templateId= are
+//   public by design. Security comes from unguessable template IDs (see newTemplateId()).
 const TEXT_ENCODER = new TextEncoder();
 
+export const SESSION_COOKIE = "catalog-forge-admin";
+
 async function hmacHex(message: string, secret: string): Promise<string> {
-  // Try Web Crypto first (Workers/edge)
   try {
     if (typeof crypto !== "undefined" && crypto.subtle) {
       const key = await crypto.subtle.importKey(
@@ -18,56 +22,95 @@ async function hmacHex(message: string, secret: string): Promise<string> {
         .join("");
     }
   } catch {}
-  // Fallback to Node crypto
   try {
     const { createHmac } = await import("crypto");
     return createHmac("sha256", secret).update(message).digest("hex");
   } catch {
-    // Last resort: simple hash (not secure, dev only)
     let hash = 0;
     for (let i = 0; i < message.length; i++) hash = (hash * 31 + message.charCodeAt(i)) >>> 0;
     return hash.toString(16);
   }
 }
 
-export async function signTemplateId(templateId: string, secret: string): Promise<string> {
-  return hmacHex(`template:${templateId}`, secret);
-}
-
-export async function verifyTemplateToken(templateId: string, token: string | null, secret: string): Promise<boolean> {
-  if (!token) return false;
-  const expected = await signTemplateId(templateId, secret);
-  // constant-time compare
-  if (expected.length !== token.length) return false;
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
   let diff = 0;
-  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ token.charCodeAt(i);
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
 }
 
-export async function getSecret(): Promise<string | null> {
-  // Try Cloudflare env first
+export { timingSafeEqual };
+
+export async function getAdminPassword(): Promise<string | null> {
   try {
     const mod = await import("@opennextjs/cloudflare");
     const ctx = (mod as unknown as { getCloudflareContext: () => { env: Record<string, unknown> } }).getCloudflareContext();
-    const s = ctx?.env?.["API_SECRET"] as string | undefined;
+    const s = ctx?.env?.["ADMIN_PASSWORD"] as string | undefined;
     if (s) return s;
   } catch {}
-  // Fallback to process.env for local dev (set via .dev.vars or env)
   try {
-    const s = (process as unknown as { env: Record<string, string> }).env?.["API_SECRET"];
+    const s = (process as unknown as { env: Record<string, string> }).env?.["ADMIN_PASSWORD"];
     if (s) return s;
   } catch {}
   return null;
 }
 
-export async function isAuthorized(req: Request, secret: string | null): Promise<boolean> {
-  if (!secret) return true; // no secret configured → allow (local dev)
-  const header = req.headers.get("x-api-key") || req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  if (!header) return false;
-  return header === secret;
+export async function createSessionToken(password: string): Promise<string> {
+  return hmacHex("catalog-forge-admin-session", password);
 }
 
-// Simple in-memory rate limiter (per isolate, 60/min per IP) — best effort for Workers without KV
+export async function verifyPassword(input: string, password: string): Promise<boolean> {
+  return timingSafeEqual(input, password);
+}
+
+export function getSessionCookie(req: Request): string | null {
+  const header = req.headers.get("cookie");
+  if (!header) return null;
+  for (const part of header.split(";")) {
+    const [k, ...rest] = part.trim().split("=");
+    if (k === SESSION_COOKIE) return decodeURIComponent(rest.join("="));
+  }
+  return null;
+}
+
+export async function isAuthenticated(req: Request): Promise<boolean> {
+  const password = await getAdminPassword();
+  if (!password) return true; // no password configured → open (local dev)
+  const value = getSessionCookie(req);
+  if (!value) return false;
+  const expected = await createSessionToken(password);
+  return timingSafeEqual(value, expected);
+}
+
+export function buildSessionCookie(token: string): string {
+  // 30 days, HttpOnly, Lax, Secure in prod ( weaknesses: no rotation except password change — fine for MVP)
+  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${process.env.NODE_ENV === "production" ? "; Secure" : ""}`;
+}
+
+export function clearSessionCookie(): string {
+  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+}
+
+// Unguessable template IDs double as capability URLs (like Notion share links).
+export function newTemplateId(): string {
+  try {
+    const uuid =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? (crypto as Crypto).randomUUID()
+        : null;
+    if (uuid) return `tpl_${uuid.replace(/-/g, "")}`;
+  } catch {}
+  const rand = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+  return `tpl_${rand}`.slice(0, 32);
+}
+
+export function sanitizeTemplateId(id: unknown): string | null {
+  if (typeof id !== "string") return null;
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return null;
+  return id;
+}
+
+// Simple in-memory rate limiter (per isolate, best effort for Workers without KV)
 const rateMap = new Map<string, { count: number; reset: number }>();
 export function checkRateLimit(ip: string, limit = 60, windowMs = 60_000): { ok: boolean; remaining: number } {
   const now = Date.now();
