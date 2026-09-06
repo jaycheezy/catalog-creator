@@ -11,9 +11,13 @@ export type ShopifyVariant = {
   compare_at_price: string | null;
   grams: number;
   barcode: string | null;
+  featured_image?: { id?: number; src?: string } | null;
+  image_id?: number | null;
 };
 
 export type ShopifyImage = {
+  id?: number;
+  variant_ids?: number[];
   src: string;
   width: number;
   height: number;
@@ -57,11 +61,33 @@ function stripHtml(html: string | null | undefined): string {
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)))
     .replace(/\s+/g, " ")
     .trim();
 }
 
 export { stripHtml };
+
+/** Shopify documents cart.currency as the customer's current presentment currency. */
+export async function fetchShopifyCurrency(rawDomain: string): Promise<string | null> {
+  const origin = normalizeDomain(rawDomain);
+  try {
+    const res = await fetch(`${origin}/cart.js`, {
+      headers: {
+        "User-Agent": "CatalogForge/1.0 (+https://catalog-forge)",
+        Accept: "application/json",
+      },
+      next: { revalidate: 300 },
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as { currency?: unknown };
+    const currency = typeof data.currency === "string" ? data.currency.trim().toUpperCase() : "";
+    return /^[A-Z]{3}$/.test(currency) ? currency : null;
+  } catch {
+    return null;
+  }
+}
 
 export async function fetchShopifyProducts(rawDomain: string): Promise<ShopifyProduct[]> {
   const origin = normalizeDomain(rawDomain);

@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchShopifyProducts, getFilteredProducts, normalizeDomain } from "@/lib/shopify";
-import { productsToRows, getValidationIssues } from "@/lib/facebook";
+import { normalizeDomain } from "@/lib/shopify";
+import { detectPlatform, helpForDetection } from "@/lib/platform";
 import { getClientIp, checkRateLimit, isAuthenticated } from "@/lib/auth";
+import { fetchStoreCatalog } from "@/lib/storeCatalog";
+import { validateCatalog } from "@/lib/catalogValidation";
+
+const CACHE_HEADERS = {
+  "Cache-Control": "public, s-maxage=300, stale-while-revalidate=60",
+};
 
 export async function GET(req: NextRequest) {
-  // Store product data is behind login (proxy redirects pages; this is the secure check).
   if (!(await isAuthenticated(req))) {
     return NextResponse.json({ error: "Not signed in — POST /api/login first", loginRequired: true }, { status: 401 });
   }
@@ -14,7 +19,6 @@ export async function GET(req: NextRequest) {
   if (!rl.ok) return NextResponse.json({ error: "Rate limited — 30 previews/min per IP" }, { status: 429 });
 
   const domain = req.nextUrl.searchParams.get("domain") || req.nextUrl.searchParams.get("store") || "";
-
   if (!domain) {
     return NextResponse.json({ error: "Missing ?domain= parameter. Example: ?domain=store.gibun.at" }, { status: 400 });
   }
@@ -27,36 +31,46 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const products = await fetchShopifyProducts(origin);
-    const filtered = getFilteredProducts(products);
-    const rows = productsToRows(filtered, origin);
-    const issues = getValidationIssues(rows);
-
+    const catalog = await fetchStoreCatalog(origin);
+    const validation = validateCatalog(catalog.rows, { importComplete: catalog.complete });
     return NextResponse.json(
       {
         domain: origin,
-        totalFetched: products.length,
-        totalPhysical: filtered.length,
-        totalVariants: rows.length,
-        issues,
-        preview: rows.slice(0, 50),
+        platform: catalog.platform,
+        totalFetched: catalog.totalFetched,
+        totalPhysical: catalog.totalProducts,
+        totalVariants: catalog.rows.length,
+        issues: validation.issues.filter((issue) => issue.severity !== "info").map((issue) => `${issue.count} × ${issue.message}`),
+        validation,
+        preview: catalog.rows.slice(0, 50),
         diagnostics: {
-          filteredOut: products.length - filtered.length,
-          sampleFilteredOut: products.filter((p) => !filtered.includes(p)).slice(0, 5).map((p) => ({
-            title: p.title,
-            handle: p.handle,
-            requires_shipping: p.variants[0]?.requires_shipping,
-          })),
+          importComplete: catalog.complete,
+          currencyCodes: catalog.currencyCodes,
+          currencySource: catalog.currencySource,
+          ...(catalog.platform === "woocommerce" ? { note: "Variable products preview as one parent row because the public Store API omits variations." } : {}),
         },
       },
-      {
-        headers: {
-          "Cache-Control": "public, s-maxage=300, stale-while-revalidate=60",
-        },
-      }
+      { headers: CACHE_HEADERS }
     );
-  } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : String(e);
-    return NextResponse.json({ error: message, domain: origin }, { status: 502 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    try {
+      const detection = await detectPlatform(origin);
+      const { code, title, help } = helpForDetection(detection, origin);
+      return NextResponse.json(
+        {
+          error: title,
+          detail: message.slice(0, 300),
+          code,
+          platform: detection.platform,
+          platformDetail: detection.detail,
+          help,
+          domain: origin,
+        },
+        { status: 502 }
+      );
+    } catch {
+      return NextResponse.json({ error: message, domain: origin }, { status: 502 });
+    }
   }
 }

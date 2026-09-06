@@ -1,7 +1,7 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "catalog-forge",
-	"compatibility_date": "2026-08-31",
+	"compatibility_date": "2026-09-05",
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 	"main": ".open-next/worker.js",
 	"assets": {

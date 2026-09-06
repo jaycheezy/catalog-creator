@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 
 function LoginForm() {
   const params = useSearchParams();
@@ -14,9 +15,10 @@ function LoginForm() {
   useEffect(() => {
     fetch("/api/login")
       .then((r) => r.json())
-      .then((j) => {
-        if (!j.configured) setOpen(true);
-        else if (j.authenticated) window.location.href = next;
+      .then((j: unknown) => {
+        const status = j as { configured?: boolean; authenticated?: boolean };
+        if (!status.configured) setOpen(true);
+        else if (status.authenticated) window.location.href = next;
         else setOpen(false);
       })
       .catch(() => setOpen(false));
@@ -43,7 +45,7 @@ function LoginForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password }),
       });
-      const json = await res.json();
+      const json = await res.json() as { error?: string };
       if (!res.ok) throw new Error(json.error || "Login failed");
       window.location.href = next;
     } catch (err) {
@@ -77,7 +79,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-zinc-50 text-zinc-900 flex items-center justify-center p-6">
       <div className="bg-white rounded-2xl border shadow-sm max-w-sm w-full p-6 space-y-4">
         <div>
-          <a href="/" className="font-semibold tracking-tight">Catalog Forge</a>
+          <Link href="/" className="font-semibold tracking-tight">Catalog Forge</Link>
           <h1 className="text-lg font-semibold mt-2">Sign in</h1>
         </div>
         <Suspense fallback={<div className="text-sm text-zinc-500">Loading…</div>}>

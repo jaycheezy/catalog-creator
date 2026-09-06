@@ -3,23 +3,42 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/dev.mjs",
     "build": "next build --webpack",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "cf:build": "opennextjs-cloudflare build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "check": "node scripts/generate-story-map.mjs && vitest run && tsc --noEmit && eslint",
+    "fonts": "node scripts/embed-fonts.mjs",
+    "story-map:check": "node scripts/generate-story-map.mjs",
+    "prebuild": "npm run story-map:check",
+    "pretypecheck": "npm run story-map:check",
+    "pretest": "npm run story-map:check",
+    "pretest:watch": "npm run story-map:check",
+    "prepreview": "npm run story-map:check",
+    "predeploy": "npm run story-map:check",
+    "precf:build": "npm run story-map:check"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1127.0",
+    "@fontsource/inter": "^5.3.0",
     "@opennextjs/cloudflare": "^1.20.4",
     "@resvg/resvg-wasm": "^2.6.2",
+    "gray-matter": "^4.0.3",
     "next": "16.3.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "satori": "^0.33.4"
   },
   "devDependencies": {
+    "@pen.dev/cli": "^0.3.6",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -28,6 +47,7 @@
     "eslint-config-next": "16.3.3",
     "tailwindcss": "^4",
     "typescript": "^5",
+    "vitest": "^4.1.11",
     "wrangler": "^4.127.1"
   }
 }

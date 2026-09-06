@@ -1,4 +1,4 @@
-import type { Template, Layer, SizePreset } from "./types";
+import type { Template, SizePreset } from "./types";
 
 /**
  * Auto-layout: adapt layers from old size to new size.

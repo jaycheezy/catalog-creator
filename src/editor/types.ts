@@ -87,6 +87,8 @@ export type Template = {
   layers: Layer[];
   createdAt: number;
   updatedAt: number;
+  /** Monotonic durable-save revision. Missing on templates saved before revisions were introduced. */
+  revision?: number;
 };
 
 // AI-friendly JSON schema description for agents

@@ -24,8 +24,6 @@ export function EditorCanvas({
   const [drag, setDrag] = useState<null | { id: string; startX: number; startY: number; origX: number; origY: number }>(null);
   const [resize, setResize] = useState<null | { id: string; handle: string; startX: number; startY: number; orig: Layer }>(null);
 
-  const selected = template.layers.find((l) => l.id === selectedId) ?? null;
-
   const handlePointerDown = (e: React.PointerEvent, id: string) => {
     if ((e.target as HTMLElement).dataset.handle) {
       const handle = (e.target as HTMLElement).dataset.handle!;

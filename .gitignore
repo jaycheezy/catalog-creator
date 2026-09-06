@@ -12,9 +12,12 @@
 
 # testing
 /coverage
+/.vitest/
 
 # next.js
 /.next/
+/.open-next/
+/.wrangler/
 /out/
 
 # production
@@ -39,3 +42,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Generated from docs/slices at development/build time
+/src/story-map/generated.json

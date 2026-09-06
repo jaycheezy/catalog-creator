@@ -1,0 +1,505 @@
+{
+  "measuredAt": "2026-09-06T12:58:04.625Z",
+  "environment": {
+    "node": "v26.0.0",
+    "next": "16.3.3",
+    "platform": "darwin",
+    "architecture": "arm64"
+  },
+  "scope": "Local HTTP native Next ImageResponse; synthetic embedded PNG; NOT hosted cold-start, deployed Worker CPU or R2 evidence",
+  "limits": {
+    "jsonBytes": 1048576,
+    "pngBytes": 4194304,
+    "layers": 100,
+    "deadlineMs": 12000,
+    "concurrency": 1,
+    "queue": 0,
+    "imagePixels": 16000000
+  },
+  "workerPreparationInputs": [
+    "src/editor/renderStyles.ts",
+    "src/lib/renderCache.ts",
+    "src/lib/renderProduct.ts",
+    "scripts/spikes/external-render/worker-preparation.ts"
+  ],
+  "samples": {
+    "1:1": {
+      "payloadBytes": 7992,
+      "samples": [
+        {
+          "kind": "fresh-raster-worker",
+          "wallMs": 194.72254199999998,
+          "renderMs": 147.644583,
+          "processCpuMs": 221.505,
+          "rssBytes": 196329472,
+          "pngBytes": 93823,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 109.99595900000003,
+          "renderMs": 107.66950000000003,
+          "processCpuMs": 143.951,
+          "rssBytes": 242302976,
+          "pngBytes": 93823,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 75.15329099999997,
+          "renderMs": 73.4325,
+          "processCpuMs": 103.612,
+          "rssBytes": 253558784,
+          "pngBytes": 93823,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 73.72795799999994,
+          "renderMs": 71.893417,
+          "processCpuMs": 89.734,
+          "rssBytes": 267501568,
+          "pngBytes": 93823,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 73.62575000000004,
+          "renderMs": 72.16595800000005,
+          "processCpuMs": 79.449,
+          "rssBytes": 272384000,
+          "pngBytes": 93823,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 76.73225000000002,
+          "renderMs": 75.05025,
+          "processCpuMs": 87.121,
+          "rssBytes": 280150016,
+          "pngBytes": 93823,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 70.83212500000002,
+          "renderMs": 69.52354200000002,
+          "processCpuMs": 78.839,
+          "rssBytes": 287539200,
+          "pngBytes": 93823,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 75.11141599999996,
+          "renderMs": 71.06850000000009,
+          "processCpuMs": 76.835,
+          "rssBytes": 279347200,
+          "pngBytes": 93823,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 84.59395900000004,
+          "renderMs": 83.0329999999999,
+          "processCpuMs": 99.832,
+          "rssBytes": 292470784,
+          "pngBytes": 93823,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 71.63179200000013,
+          "renderMs": 69.91645900000003,
+          "processCpuMs": 86.692,
+          "rssBytes": 292601856,
+          "pngBytes": 93823,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 78.18933300000003,
+          "renderMs": 76.58187500000008,
+          "processCpuMs": 83.17,
+          "rssBytes": 308543488,
+          "pngBytes": 93823,
+          "exactPngBytes": true
+        }
+      ],
+      "warmP50Ms": 75.11141599999996,
+      "warmP95Ms": 109.99595900000003,
+      "missingImageParity": true,
+      "rgbaSha256": "4c477dc1991b332f6404542143669e044fd6b12730d89c577db0c5d66371c01d"
+    },
+    "4:5": {
+      "payloadBytes": 7995,
+      "samples": [
+        {
+          "kind": "fresh-raster-worker",
+          "wallMs": 183.51037500000007,
+          "renderMs": 155.82504099999983,
+          "processCpuMs": 245.225,
+          "rssBytes": 349962240,
+          "pngBytes": 103779,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 97.64966699999991,
+          "renderMs": 96.57375000000002,
+          "processCpuMs": 128.75,
+          "rssBytes": 388972544,
+          "pngBytes": 103779,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 89.58841699999994,
+          "renderMs": 87.55774999999994,
+          "processCpuMs": 115.288,
+          "rssBytes": 387366912,
+          "pngBytes": 103779,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 85.04525000000012,
+          "renderMs": 83.8130000000001,
+          "processCpuMs": 91.39,
+          "rssBytes": 388759552,
+          "pngBytes": 103779,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 91.78620899999987,
+          "renderMs": 90.16991700000017,
+          "processCpuMs": 121.98,
+          "rssBytes": 399507456,
+          "pngBytes": 103779,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 85.89599999999973,
+          "renderMs": 84.74483400000008,
+          "processCpuMs": 93.1,
+          "rssBytes": 410386432,
+          "pngBytes": 103779,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 85.45720799999981,
+          "renderMs": 84.04100000000017,
+          "processCpuMs": 104.925,
+          "rssBytes": 404881408,
+          "pngBytes": 103779,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 83.50829199999998,
+          "renderMs": 82.28329200000007,
+          "processCpuMs": 86.235,
+          "rssBytes": 410697728,
+          "pngBytes": 103779,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 87.84691599999996,
+          "renderMs": 86.650083,
+          "processCpuMs": 119.778,
+          "rssBytes": 426246144,
+          "pngBytes": 103779,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 83.60916699999962,
+          "renderMs": 82.4092499999997,
+          "processCpuMs": 89.295,
+          "rssBytes": 422019072,
+          "pngBytes": 103779,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 88.42225000000008,
+          "renderMs": 86.97958400000016,
+          "processCpuMs": 122.149,
+          "rssBytes": 426737664,
+          "pngBytes": 103779,
+          "exactPngBytes": true
+        }
+      ],
+      "warmP50Ms": 85.89599999999973,
+      "warmP95Ms": 97.64966699999991,
+      "missingImageParity": true,
+      "rgbaSha256": "3abba40f3c54ba02a845327547bb2078bb558f4d7478d5711d8ae4d926c1b945"
+    },
+    "9:16": {
+      "payloadBytes": 7996,
+      "samples": [
+        {
+          "kind": "fresh-raster-worker",
+          "wallMs": 213.058583,
+          "renderMs": 184.12429100000008,
+          "processCpuMs": 265.741,
+          "rssBytes": 471646208,
+          "pngBytes": 111293,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 131.70191699999987,
+          "renderMs": 130.32808299999988,
+          "processCpuMs": 165.662,
+          "rssBytes": 470712320,
+          "pngBytes": 111293,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 117.22987499999999,
+          "renderMs": 115.87154100000043,
+          "processCpuMs": 145.616,
+          "rssBytes": 464715776,
+          "pngBytes": 111293,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 115.0759579999999,
+          "renderMs": 113.36562499999991,
+          "processCpuMs": 137.727,
+          "rssBytes": 465043456,
+          "pngBytes": 111293,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 113.80012499999975,
+          "renderMs": 112.22658299999966,
+          "processCpuMs": 130.479,
+          "rssBytes": 465174528,
+          "pngBytes": 111293,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 115.17795800000022,
+          "renderMs": 113.54025000000001,
+          "processCpuMs": 134.588,
+          "rssBytes": 465305600,
+          "pngBytes": 111293,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 120.90670899999986,
+          "renderMs": 119.40587499999992,
+          "processCpuMs": 138.732,
+          "rssBytes": 475938816,
+          "pngBytes": 111293,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 118.886708,
+          "renderMs": 117.3257080000003,
+          "processCpuMs": 139.68,
+          "rssBytes": 482656256,
+          "pngBytes": 111293,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 118.69737499999974,
+          "renderMs": 117.21274999999969,
+          "processCpuMs": 149.121,
+          "rssBytes": 496795648,
+          "pngBytes": 111293,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 116.1860829999996,
+          "renderMs": 114.6023750000004,
+          "processCpuMs": 134.27,
+          "rssBytes": 498024448,
+          "pngBytes": 111293,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 126.21500000000015,
+          "renderMs": 124.63087499999983,
+          "processCpuMs": 143.964,
+          "rssBytes": 500662272,
+          "pngBytes": 111293,
+          "exactPngBytes": true
+        }
+      ],
+      "warmP50Ms": 117.22987499999999,
+      "warmP95Ms": 131.70191699999987,
+      "missingImageParity": true,
+      "rgbaSha256": "66197d50331b9fe8cfe2e724b0409706bb4cd250f61cafd1d6d0eb23fbf71167"
+    },
+    "1.91:1": {
+      "payloadBytes": 7996,
+      "samples": [
+        {
+          "kind": "fresh-raster-worker",
+          "wallMs": 144.22712500000034,
+          "renderMs": 116.8510409999999,
+          "processCpuMs": 186.737,
+          "rssBytes": 502628352,
+          "pngBytes": 62452,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 61.55000000000018,
+          "renderMs": 60.417083000000275,
+          "processCpuMs": 122.816,
+          "rssBytes": 499040256,
+          "pngBytes": 62452,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 53.58550000000014,
+          "renderMs": 52.537624999999935,
+          "processCpuMs": 64.459,
+          "rssBytes": 499417088,
+          "pngBytes": 62452,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 51.69254099999944,
+          "renderMs": 50.65383400000064,
+          "processCpuMs": 55.035,
+          "rssBytes": 499695616,
+          "pngBytes": 62452,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 51.91725000000042,
+          "renderMs": 50.94262499999968,
+          "processCpuMs": 60.423,
+          "rssBytes": 499843072,
+          "pngBytes": 62452,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 51.468166999999994,
+          "renderMs": 50.09187500000007,
+          "processCpuMs": 56.621,
+          "rssBytes": 494469120,
+          "pngBytes": 62452,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 52.59074999999939,
+          "renderMs": 51.52091699999983,
+          "processCpuMs": 58.551,
+          "rssBytes": 492535808,
+          "pngBytes": 62452,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 49.86920800000007,
+          "renderMs": 48.90254100000038,
+          "processCpuMs": 51.241,
+          "rssBytes": 492552192,
+          "pngBytes": 62452,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 50.23566599999958,
+          "renderMs": 49.272125000000415,
+          "processCpuMs": 65.802,
+          "rssBytes": 492666880,
+          "pngBytes": 62452,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 51.69133300000067,
+          "renderMs": 50.26549999999952,
+          "processCpuMs": 67.418,
+          "rssBytes": 492748800,
+          "pngBytes": 62452,
+          "exactPngBytes": true
+        },
+        {
+          "kind": "warm",
+          "wallMs": 52.56791599999997,
+          "renderMs": 51.44029199999932,
+          "processCpuMs": 60.621,
+          "rssBytes": 492863488,
+          "pngBytes": 62452,
+          "exactPngBytes": true
+        }
+      ],
+      "warmP50Ms": 51.69254099999944,
+      "warmP95Ms": 61.55000000000018,
+      "missingImageParity": true,
+      "rgbaSha256": "940bbd351ba8ec7a25262852ae5fa045844da43dc5f2d329fa34f5888308c654"
+    }
+  },
+  "safety": {
+    "unauthorized": 401,
+    "malformedJson": 400,
+    "oversizedBody": 413,
+    "unsupportedDimensions": 422,
+    "unsupportedVersion": 422,
+    "remoteImageDenied": 422,
+    "oversizedLayerCount": 422,
+    "concurrentBurst": {
+      "statuses": [
+        200,
+        429
+      ],
+      "active": 0,
+      "maxActive": 1,
+      "queued": 0,
+      "terminations": 0
+    },
+    "hardDeadline": {
+      "status": 504,
+      "active": 0,
+      "maxActive": 1,
+      "queued": 0,
+      "terminations": 1
+    },
+    "cancel": {
+      "active": 0,
+      "maxActive": 1,
+      "queued": 0,
+      "terminations": 1
+    }
+  },
+  "preparation": {
+    "31": {
+      "snapshotBytes": 12765,
+      "localP50Ms": 0.051666999999724794,
+      "localP95Ms": 0.08333300000049348,
+      "scope": "Node wall time only; no R2/network/PNG validation/deployed CPU claim"
+    },
+    "250": {
+      "snapshotBytes": 96942,
+      "localP50Ms": 0.13737500000024738,
+      "localP95Ms": 0.1455840000007811,
+      "scope": "Node wall time only; no R2/network/PNG validation/deployed CPU claim"
+    }
+  }
+}

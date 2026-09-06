@@ -42,17 +42,9 @@ function timingSafeEqual(a: string, b: string): boolean {
 export { timingSafeEqual };
 
 export async function getAdminPassword(): Promise<string | null> {
-  try {
-    const mod = await import("@opennextjs/cloudflare");
-    const ctx = (mod as unknown as { getCloudflareContext: () => { env: Record<string, unknown> } }).getCloudflareContext();
-    const s = ctx?.env?.["ADMIN_PASSWORD"] as string | undefined;
-    if (s) return s;
-  } catch {}
-  try {
-    const s = (process as unknown as { env: Record<string, string> }).env?.["ADMIN_PASSWORD"];
-    if (s) return s;
-  } catch {}
-  return null;
+  // Single source: deployment environment (Netlify env vars, local .env).
+  // The legacy Cloudflare binding read was removed with the hosting move.
+  return process.env.ADMIN_PASSWORD || null;
 }
 
 export async function createSessionToken(password: string): Promise<string> {

@@ -1,11 +1,15 @@
 import { ShopifyProduct, stripHtml } from "./shopify";
+import { validateCatalog } from "./catalogValidation";
 
 export type FeedRow = {
   id: string;
+  // Internal source identity for rendering; excluded from the exported CSV.
+  // Keep the existing merchant-facing feed ID independent of mutable SKUs.
+  source_id?: string;
   title: string;
   description: string;
-  availability: "in stock" | "out of stock";
-  condition: "new" | "used" | "refurbished";
+  availability: "in stock" | "out of stock" | "";
+  condition: "new" | "used" | "refurbished" | "";
   price: string; // e.g. "17.90 EUR"
   link: string;
   image_link: string;
@@ -41,13 +45,15 @@ function ensureHttps(url: string): string {
   return url;
 }
 
-function formatPrice(price: string, compareAtPrice: string | null): { price: string; sale_price: string } {
+function formatPrice(price: string, compareAtPrice: string | null, currency: string): { price: string; sale_price: string } {
   const p = parseFloat(price);
-  const formatted = `${p.toFixed(2)} EUR`;
+  if (!Number.isFinite(p)) return { price: "", sale_price: "" };
+  const suffix = currency ? ` ${currency}` : "";
+  const formatted = `${p.toFixed(2)}${suffix}`;
   if (compareAtPrice) {
     const cap = parseFloat(compareAtPrice);
     if (!isNaN(cap) && cap > p) {
-      return { price: `${cap.toFixed(2)} EUR`, sale_price: formatted };
+      return { price: `${cap.toFixed(2)}${suffix}`, sale_price: formatted };
     }
   }
   return { price: formatted, sale_price: "" };
@@ -62,9 +68,9 @@ function csvEscape(value: string): string {
   return s;
 }
 
-export function mapProductToRows(product: ShopifyProduct, origin: string): FeedRow[] {
+export function mapProductToRows(product: ShopifyProduct, origin: string, currency: string): FeedRow[] {
   const cleanDescription = stripHtml(product.body_html).slice(0, 5000) || product.title;
-  const brand = product.vendor || "Gibun";
+  const brand = product.vendor || "";
 
   return product.variants.map((variant) => {
     // Use SKU as id if present, else variant.id (Facebook id must be unique & stable)
@@ -74,9 +80,13 @@ export function mapProductToRows(product: ShopifyProduct, origin: string): FeedR
         ? `${product.title} - ${variant.title}`.slice(0, 150)
         : product.title.slice(0, 150);
 
-    const { price, sale_price } = formatPrice(variant.price, variant.compare_at_price);
-    const link = `${origin}/products/${product.handle}`;
-    const imageRaw = product.images[0]?.src || "";
+    const { price, sale_price } = formatPrice(variant.price, variant.compare_at_price, currency);
+    const link = `${origin}/products/${product.handle}?variant=${variant.id}`;
+    const variantImage = product.images.find((image) =>
+      (variant.image_id != null && image.id === variant.image_id) ||
+      image.variant_ids?.includes(variant.id)
+    );
+    const imageRaw = variant.featured_image?.src || variantImage?.src || product.images[0]?.src || "";
     const image_link = ensureHttps(imageRaw);
     const additional = product.images
       .slice(1, 5)
@@ -84,11 +94,9 @@ export function mapProductToRows(product: ShopifyProduct, origin: string): FeedR
       .filter(Boolean)
       .join(",");
 
-    // Default google category for tea - user can override later
-    const google_product_category = "Food, Beverages & Tobacco > Beverages > Tea";
-
     return {
       id,
+      source_id: `shopify:variant:${variant.id}`,
       title,
       description: cleanDescription.slice(0, 5000),
       availability: variant.available ? "in stock" : "out of stock",
@@ -99,15 +107,15 @@ export function mapProductToRows(product: ShopifyProduct, origin: string): FeedR
       brand: brand.slice(0, 70),
       additional_image_link: additional,
       item_group_id: product.variants.length > 1 ? String(product.id) : "",
-      google_product_category,
+      google_product_category: "",
       sale_price,
       inventory: "", // leave blank unless quantity tracking needed
     };
   });
 }
 
-export function productsToRows(products: ShopifyProduct[], origin: string): FeedRow[] {
-  return products.flatMap((p) => mapProductToRows(p, origin));
+export function productsToRows(products: ShopifyProduct[], origin: string, currency: string): FeedRow[] {
+  return products.flatMap((p) => mapProductToRows(p, origin, currency));
 }
 
 export function rowsToCsv(rows: FeedRow[]): string {
@@ -119,13 +127,9 @@ export function rowsToCsv(rows: FeedRow[]): string {
 }
 
 export function getValidationIssues(rows: FeedRow[]): string[] {
-  const issues: string[] = [];
-  if (rows.length === 0) issues.push("No products to export after filtering.");
-  const missingImages = rows.filter((r) => !r.image_link).length;
-  if (missingImages > 0) issues.push(`${missingImages} variants missing image_link (required by Facebook).`);
-  const missingPrice = rows.filter((r) => !r.price).length;
-  if (missingPrice > 0) issues.push(`${missingPrice} variants missing price.`);
-  return issues;
+  return validateCatalog(rows).issues
+    .filter((issue) => issue.severity !== "info")
+    .map((issue) => `${issue.count} × ${issue.message}`);
 }
 
 export { FB_HEADERS };

@@ -1,126 +1,85 @@
-// Simple template store — R2 when available on Cloudflare, fallback to file + global for local dev
 import type { Template } from "@/editor/types";
+import { asDurableStorageError, getTemplatesBucket } from "./durableStorage";
 
-declare global {
-  var __CF_TEMPLATES__: Map<string, Template> | undefined;
-}
+const localPath = "/tmp/catalog-forge-templates.json";
+const keyFor = (id: string) => `templates/${id}.json`;
 
-function getMemory(): Map<string, Template> {
-  if (!globalThis.__CF_TEMPLATES__) globalThis.__CF_TEMPLATES__ = new Map<string, Template>();
-  return globalThis.__CF_TEMPLATES__;
-}
-
-async function getEnv(): Promise<Record<string, unknown> | null> {
+async function readLocalTemplates(): Promise<Record<string, Template>> {
+  const fs = await import("fs/promises");
   try {
-    const mod = await import("@opennextjs/cloudflare");
-    const ctx = (mod as unknown as { getCloudflareContext: () => { env: Record<string, unknown> } }).getCloudflareContext();
-    return ctx?.env ?? null;
-  } catch {
-    return null;
+    return JSON.parse(await fs.readFile(localPath, "utf8")) as Record<string, Template>;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw asDurableStorageError("Reading the local template store", error);
   }
-}
-
-function getBucket(env: Record<string, unknown> | null, name: string): unknown | null {
-  if (!env) return null;
-  return (env[name] as unknown) ?? null;
 }
 
 // File fallback for local edge runtime isolates (Next dev edge has no shared memory)
 async function fileFallbackSave(template: Template): Promise<void> {
   try {
     const fs = await import("fs/promises");
-    const path = "/tmp/catalog-forge-templates.json";
-    let all: Record<string, Template> = {};
-    try {
-      const text = await fs.readFile(path, "utf-8");
-      all = JSON.parse(text);
-    } catch {}
+    const all = await readLocalTemplates();
     all[template.id] = template;
-    await fs.writeFile(path, JSON.stringify(all));
-  } catch {}
+    const temporaryPath = `${localPath}.${process.pid}.${Date.now()}.tmp`;
+    await fs.writeFile(temporaryPath, JSON.stringify(all));
+    await fs.rename(temporaryPath, localPath);
+  } catch (error) {
+    throw asDurableStorageError("Saving the local template", error);
+  }
 }
 
 async function fileFallbackGet(id: string): Promise<Template | null> {
-  try {
-    const fs = await import("fs/promises");
-    const text = await fs.readFile("/tmp/catalog-forge-templates.json", "utf-8");
-    const all = JSON.parse(text) as Record<string, Template>;
-    return all[id] ?? null;
-  } catch {
-    return null;
-  }
+  return (await readLocalTemplates())[id] ?? null;
 }
 
 async function fileFallbackList(): Promise<Template[]> {
-  try {
-    const fs = await import("fs/promises");
-    const text = await fs.readFile("/tmp/catalog-forge-templates.json", "utf-8");
-    const all = JSON.parse(text) as Record<string, Template>;
-    return Object.values(all);
-  } catch {
-    return [];
-  }
+  return Object.values(await readLocalTemplates());
 }
 
 export async function saveTemplate(template: Template): Promise<void> {
-  getMemory().set(template.id, template);
-  await fileFallbackSave(template);
   try {
-    const env = await getEnv();
-    const bucket = getBucket(env, "TEMPLATES_BUCKET") as { put: (k: string, v: string, o: unknown) => Promise<void> } | null;
+    const bucket = await getTemplatesBucket();
     if (bucket) {
-      await bucket.put(`templates/${template.id}.json`, JSON.stringify(template), {
+      await bucket.put(keyFor(template.id), JSON.stringify(template), {
         httpMetadata: { contentType: "application/json" },
       });
+      return;
     }
-  } catch (e) {
-    console.warn("saveTemplate R2 failed, using memory/file", e);
+    await fileFallbackSave(template);
+  } catch (error) {
+    throw asDurableStorageError("Saving the template to durable storage", error);
   }
 }
 
 export async function getTemplate(id: string): Promise<Template | null> {
-  const mem = getMemory().get(id);
-  if (mem) return mem;
-  const file = await fileFallbackGet(id);
-  if (file) {
-    getMemory().set(id, file);
-    return file;
-  }
   try {
-    const env = await getEnv();
-    const bucket = getBucket(env, "TEMPLATES_BUCKET") as { get: (k: string) => Promise<{ text: () => Promise<string> } | null> } | null;
+    const bucket = await getTemplatesBucket();
     if (bucket) {
-      const obj = await bucket.get(`templates/${id}.json`);
-      if (obj) {
-        const text = await obj.text();
-        const parsed = JSON.parse(text) as Template;
-        getMemory().set(id, parsed);
-        return parsed;
-      }
+      const object = await bucket.get(keyFor(id));
+      return object ? JSON.parse(await object.text()) as Template : null;
     }
-  } catch (e) {
-    console.warn("getTemplate R2 failed", e);
+    return fileFallbackGet(id);
+  } catch (error) {
+    throw asDurableStorageError("Reading the template from durable storage", error);
   }
-  return null;
 }
 
 export async function listTemplates(): Promise<Template[]> {
-  const fileList = await fileFallbackList();
-  if (fileList.length) return fileList;
   try {
-    const env = await getEnv();
-    const bucket = getBucket(env, "TEMPLATES_BUCKET") as { list: (o: unknown) => Promise<{ objects: { key: string }[] }>; get: (k: string) => Promise<{ text: () => Promise<string> } | null> } | null;
-    if (bucket) {
-      const listed = await bucket.list({ prefix: "templates/" });
-      const out: Template[] = [];
-      for (const obj of listed.objects) {
-        const got = await bucket.get(obj.key);
-        if (got) out.push(JSON.parse(await got.text()) as Template);
-      }
-      if (out.length) return out;
-    }
-  } catch {}
-  return Array.from(getMemory().values());
+    const bucket = await getTemplatesBucket();
+    if (!bucket) return fileFallbackList();
+
+    const keys = await bucket.list("templates/");
+    const objects = await Promise.all(keys.map((key) => bucket.get(key)));
+    const templates = await Promise.all(
+      objects
+        .filter((object) => object !== null)
+        .map(async (object) => JSON.parse(await object.text()) as Template)
+    );
+    return templates;
+  } catch (error) {
+    throw asDurableStorageError("Listing templates from durable storage", error);
+  }
 }
 
 export function decodeTemplateParam(param: string | null): Template | null {

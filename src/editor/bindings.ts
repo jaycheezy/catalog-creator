@@ -26,7 +26,8 @@ export function resolveBinding(template: string, product: FeedRow | null): strin
         const parse = (s: string) => parseFloat(s.replace(/[^0-9.]/g, "")) || 0;
         const p = parse(product.price);
         const sp = parse(product.sale_price || "");
-        if (sp && p > sp) return `${(p - sp).toFixed(2)} EUR`;
+        const currency = product.price.match(/\s([A-Z]{3})$/)?.[1] || "";
+        if (sp && p > sp) return `${(p - sp).toFixed(2)}${currency ? ` ${currency}` : ""}`;
         return "";
       }
       case "vendor":
@@ -35,7 +36,7 @@ export function resolveBinding(template: string, product: FeedRow | null): strin
       case "description":
         return product.description || "";
       case "handle":
-        return product.link?.split("/products/")[1] || "";
+        return product.link?.split("/products/")[1]?.split("?")[0] || "";
       case "sku":
       case "id":
         return product.id || "";

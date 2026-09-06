@@ -1,0 +1,44 @@
+[
+  {
+    "id": "connect",
+    "title": "1. Connect Store",
+    "subtitle": "Integrate product data",
+    "goal": "Get 31 Gibun teas in"
+  },
+  {
+    "id": "validate",
+    "title": "2. Clean & Validate",
+    "subtitle": "Make feed Meta-ready",
+    "goal": "0 errors before publish"
+  },
+  {
+    "id": "design",
+    "title": "3. Design Overlay",
+    "subtitle": "Brand packshots",
+    "goal": "Price badge + title"
+  },
+  {
+    "id": "variants",
+    "title": "4. Size Variants",
+    "subtitle": "Every placement",
+    "goal": "1:1, 4:5, 9:16"
+  },
+  {
+    "id": "feed",
+    "title": "5. Enriched Feed",
+    "subtitle": "Generate catalog",
+    "goal": "image_link → render"
+  },
+  {
+    "id": "publish",
+    "title": "6. Publish to Meta",
+    "subtitle": "Advertise on Facebook",
+    "goal": "Scheduled fetch"
+  },
+  {
+    "id": "test",
+    "title": "7. Test & Learn",
+    "subtitle": "Know what wins",
+    "goal": "A/B + ROAS"
+  }
+]

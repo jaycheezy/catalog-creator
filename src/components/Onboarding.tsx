@@ -9,11 +9,15 @@ export function Onboarding() {
   const [step, setStep] = useState(1);
 
   useEffect(() => {
+    let shouldOpen = false;
     try {
-      if (!localStorage.getItem(KEY)) setOpen(true);
+      shouldOpen = !localStorage.getItem(KEY);
     } catch {
-      setOpen(true);
+      shouldOpen = true;
     }
+    if (!shouldOpen) return;
+    const timer = window.setTimeout(() => setOpen(true), 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const dismiss = () => {
@@ -90,7 +94,7 @@ export function Onboarding() {
           {step === 4 && (
             <div className="space-y-3">
               <h3 className="font-medium">4. Enriched feed for Meta</h3>
-              <p className="text-sm text-zinc-600">After Save, Editor shows <code className="bg-violet-100 px-1 rounded text-xs">/api/feed?domain=store.gibun.at&templateId=xxx</code>. Every <code className="bg-zinc-100 px-1 rounded text-xs">image_link</code> becomes <code className="bg-zinc-100 px-1 rounded text-xs">/api/render?templateId=xxx&handle=...</code> — Meta fetches server-rastered PNGs (cached 24h).</p>
+              <p className="text-sm text-zinc-600">After Save, copy the enriched feed URL from the editor. Each feed image uses the exact product variant, so Meta receives that variant’s title, price, and available photo.</p>
               <div className="bg-zinc-900 text-zinc-100 rounded-lg p-3 font-mono text-xs break-all">https://catalog-forge/api/feed?domain=store.gibun.at&templateId=tpl_abc123</div>
               <div className="text-xs text-zinc-500">Paste into Commerce Manager → Data Sources → Data Feed → Scheduled Fetch (daily).</div>
             </div>

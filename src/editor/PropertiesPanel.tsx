@@ -2,6 +2,7 @@
 
 import type { Layer, Template } from "./types";
 import { BINDINGS } from "./types";
+import { fontFallbackNotice } from "./renderStyles";
 
 export function PropertiesPanel({
   template,
@@ -15,6 +16,7 @@ export function PropertiesPanel({
   onUpdateLayer: (id: string, patch: Partial<Layer> | ((l: Layer) => Partial<Layer>)) => void;
 }) {
   const layer = template.layers.find((l) => l.id === selectedId) ?? null;
+  const fontNotice = layer ? fontFallbackNotice(layer.style.fontFamily) : null;
 
   if (!layer) {
     return (
@@ -162,6 +164,9 @@ export function PropertiesPanel({
             </select>
           </label>
         </div>
+        {fontNotice ? (
+          <p className="text-xs text-amber-700">{fontNotice} Saved value: {layer.style.fontFamily}</p>
+        ) : null}
       </div>
 
       <div className="flex gap-2">

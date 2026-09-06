@@ -1,19 +1,52 @@
 "use client";
 
 import { useEffect, useState, useMemo, useRef } from "react";
+import "@fontsource/inter/400.css";
+import "@fontsource/inter/600.css";
+import "@fontsource/inter/700.css";
 import { TemplateRenderer } from "@/editor/TemplateRenderer";
 import { EditorCanvas } from "@/editor/EditorCanvas";
 import { LayersPanel } from "@/editor/LayersPanel";
 import { PropertiesPanel } from "@/editor/PropertiesPanel";
-import { createDefaultTemplate, SIZE_PRESETS, getPresetById, TEMPLATE_JSON_SCHEMA } from "@/editor/types";
+import { createDefaultTemplate, SIZE_PRESETS, TEMPLATE_JSON_SCHEMA } from "@/editor/types";
 import { adaptTemplateToSize } from "@/editor/autoLayout";
 import type { Template, Layer } from "@/editor/types";
 import type { FeedRow } from "@/lib/facebook";
+import { buildRenderUrl } from "@/lib/renderProduct";
+import type { CatalogProject } from "@/lib/catalogProject";
+import { savedPlacementTemplate, SIZE_PRESET_IDS, type SizePresetId } from "@/lib/catalogProject";
+import {
+  isPlacementSaved,
+  parseVariantDraftId,
+  placementFingerprint,
+  placementView,
+  promotePlacementToMaster,
+  summarizeVariantSaves,
+  variantDraftId,
+  type VariantSaveResult,
+} from "@/editor/placementState";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import type { CatalogValidationResult } from "@/lib/catalogValidation";
+import { isTemplateSaved, templateFingerprint, type SavedTemplateRecord } from "@/editor/saveState";
+import { WebmcpSpike } from "@/components/WebmcpSpike";
 
 const STORAGE_KEY = "catalog-forge-templates-v1";
 const DOMAIN_KEY = "catalog-forge-editor-domain";
 
 export default function EditorPage() {
+  const router = useRouter();
+  // Resolved after hydration so the server and client first render agree.
+  // Null means the query string has not been read yet; no loading starts.
+  const [projectId, setProjectId] = useState<string | null>(null);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setProjectId(new URLSearchParams(window.location.search).get("projectId") || "");
+  }, []);
+  const [projectPlacement, setProjectPlacement] = useState<CatalogProject["placement"]>("carousel");
+  const [projectError, setProjectError] = useState<string | null>(null);
+  const [projectValidation, setProjectValidation] = useState<CatalogValidationResult | null>(null);
   const [templates, setTemplates] = useState<Template[]>(() => [createDefaultTemplate("1:1")]);
   const [activeId, setActiveId] = useState<string>(() => templates[0].id);
   const [selectedId, setSelectedId] = useState<string | null>("layer_title");
@@ -24,18 +57,55 @@ export default function EditorPage() {
   const [loading, setLoading] = useState(false);
   const [showJson, setShowJson] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
+  const [savedTemplates, setSavedTemplates] = useState<Record<string, SavedTemplateRecord>>({});
+  const [savedPlacements, setSavedPlacements] = useState<Partial<Record<SizePresetId, SavedTemplateRecord>>>({});
+  const [placementSnapshots, setPlacementSnapshots] = useState<Partial<Record<SizePresetId, Template>>>({});
+  const [masterId, setMasterId] = useState<string>(() => templates[0].id);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  const [publication, setPublication] = useState<{
+    active: { publishedAt: number; projectRevision: number } | null;
+    lastAttempt: {
+      status: "success" | "failed";
+      attemptedRevision: number;
+      attemptedAt: number;
+      error?: { message: string; code: string; retryable: boolean };
+    } | null;
+  } | null | undefined>(undefined);
+  const [projectRevision, setProjectRevision] = useState(0);
+  const [saveError, setSaveError] = useState<{ message: string; retryable: boolean } | null>(null);
   const exportRef = useRef<HTMLDivElement>(null);
 
   const active = useMemo(() => templates.find((t) => t.id === activeId) ?? templates[0], [templates, activeId]);
+  const master = useMemo(() => templates.find((t) => t.id === masterId) ?? active, [templates, masterId, active]);
+  const editingVariantSize = parseVariantDraftId(activeId);
   const product = products[productIdx] ?? null;
+  const savedTemplate = savedTemplates[active.id];
+  const isSaved = isTemplateSaved(active, savedTemplate);
+  const placementRecordForActive = !savedTemplate && editingVariantSize ? savedPlacements[editingVariantSize] : undefined;
+  const placementSavedForActive = placementRecordForActive
+    ? placementFingerprint(active) === placementRecordForActive.fingerprint
+    : false;
+  const headerSaved = isSaved || placementSavedForActive;
+  const savedId = isSaved
+    ? savedTemplate.templateId
+    : placementSavedForActive && placementRecordForActive
+      ? placementRecordForActive.templateId
+      : null;
+  const webmcpProbeEnabled = process.env.NODE_ENV !== "production"
+    && typeof window !== "undefined"
+    && new URLSearchParams(window.location.search).get("webmcpProbe") === "1";
 
   // Load from localStorage
   useEffect(() => {
+    if (projectId === null || projectId) return;
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as Template[];
         if (parsed.length) {
+          // Restore the user's local editor session after hydration.
+          // eslint-disable-next-line react-hooks/set-state-in-effect
           setTemplates(parsed);
           setActiveId(parsed[0].id);
         }
@@ -43,7 +113,7 @@ export default function EditorPage() {
       const d = localStorage.getItem(DOMAIN_KEY);
       if (d) setDomain(d);
     } catch {}
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(templates));
@@ -57,9 +127,9 @@ export default function EditorPage() {
     setLoading(true);
     try {
       const res = await fetch(`/api/preview?domain=${encodeURIComponent(domain)}`);
-      const json = await res.json();
+      const json = await res.json() as { error?: string; preview?: FeedRow[] };
       if (!res.ok) throw new Error(json.error);
-      setProducts(json.preview as FeedRow[]);
+      setProducts(json.preview ?? []);
       setProductIdx(0);
     } catch (e) {
       alert(String(e));
@@ -69,9 +139,67 @@ export default function EditorPage() {
   };
 
   useEffect(() => {
+    if (projectId === null) return;
+    if (projectId) {
+      // Loading state tracks the external project fetch initiated by this effect.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLoading(true);
+      fetch(`/api/projects?id=${encodeURIComponent(projectId)}`)
+        .then(async (res) => {
+          const json = await res.json() as CatalogProject & {
+            error?: string;
+            publication?: {
+              active: { publishedAt: number; projectRevision: number } | null;
+              lastAttempt: {
+                status: "success" | "failed";
+                attemptedRevision: number;
+                attemptedAt: number;
+                error?: { message: string; code: string; retryable: boolean };
+              } | null;
+            } | null;
+          };
+          if (!res.ok) throw new Error(json.error || "Could not load project");
+          const project = json as CatalogProject;
+          setTemplates([project.template]);
+          setActiveId(project.template.id);
+          setMasterId(project.template.id);
+          setProducts(project.products);
+          setProductIdx(0);
+          setDomain(project.source.value);
+          setProjectPlacement(project.placement);
+          setProjectValidation(project.validation ?? null);
+          setProjectRevision(project.revision ?? 0);
+          setPublication(json.publication ?? null);
+          setSavedTemplates({
+            [project.template.id]: {
+              templateId: project.template.id,
+              fingerprint: templateFingerprint(project.template),
+              revision: project.template.revision ?? 0,
+            },
+          });
+          const seeded: Partial<Record<SizePresetId, SavedTemplateRecord>> = {};
+          for (const sizeId of SIZE_PRESET_IDS) {
+            const saved = savedPlacementTemplate(project, sizeId);
+            if (saved) {
+              seeded[sizeId] = {
+                templateId: saved.id,
+                fingerprint: placementFingerprint(saved),
+                revision: saved.revision ?? 0,
+              };
+            }
+          }
+          setSavedPlacements(seeded);
+          setPlacementSnapshots({ ...(project.placementTemplates ?? {}) });
+          setSaveNotice(null);
+          setSaveError(null);
+        })
+        .catch((error) => setProjectError(error instanceof Error ? error.message : String(error)))
+        .finally(() => setLoading(false));
+      return;
+    }
     fetchProducts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [projectId]);
 
   const updateActive = (patch: Partial<Template> | Template) => {
     setTemplates((prev) =>
@@ -99,6 +227,10 @@ export default function EditorPage() {
             }
       )
     );
+  };
+
+  const setProbeBackground = (background: string) => {
+    setTemplates((prev) => prev.map((t) => t.id === activeId ? { ...t, background, updatedAt: Date.now() } : t));
   };
 
   const addLayer = (type: Layer["type"]) => {
@@ -139,53 +271,414 @@ export default function EditorPage() {
   };
 
   const changeSize = (sizeId: string) => {
-    const preset = getPresetById(sizeId);
-    const adapted = adaptTemplateToSize(active, preset);
-    updateActive(adapted);
+    if (editingVariantSize) return;
+    const targetSize = sizeId as SizePresetId;
+    const promoted = promotePlacementToMaster(
+      master,
+      SIZE_PRESETS,
+      targetSize,
+      variantEntry(targetSize),
+      placementSnapshots[targetSize],
+    );
+    // The selected placement now is the master. Remove its duplicate draft so
+    // the canvas, card, and save-all candidate share one durable owner.
+    setTemplates((prev) => prev
+      .filter((template) => template.id !== variantDraftId(targetSize))
+      .map((template) => (template.id === master.id ? promoted : template)));
+    setActiveId(master.id);
+    setSelectedId(null);
+  };
+
+  const variantEntry = (sizeId: SizePresetId): Template | undefined =>
+    templates.find((t) => t.id === variantDraftId(sizeId));
+
+  /**
+   * Open one placement as an independent draft. Other placements keep
+   * rendering from the master draft, so editing here stales only this card.
+   */
+  const openVariant = (sizeId: SizePresetId) => {
+    const existing = variantEntry(sizeId);
+    if (existing) {
+      setActiveId(existing.id);
+      setSelectedId(null);
+      return;
+    }
+    const preset = SIZE_PRESETS.find((p) => p.id === sizeId) ?? SIZE_PRESETS[0];
+    const base = placementSnapshots[sizeId] ?? (sizeId === master.sizeId ? master : adaptTemplateToSize(master, preset));
+    const draftId = variantDraftId(sizeId);
+    setTemplates((prev) => {
+      if (prev.some((t) => t.id === draftId)) return prev;
+      // Keep the base name: renaming the draft would make the saved snapshot
+      // look stale against a fresh adaptation after reloading.
+      const draft: Template = { ...base, id: draftId, updatedAt: Date.now() };
+      return [...prev, draft];
+    });
+    setActiveId(draftId);
+    setSelectedId(null);
+  };
+
+  const backToMaster = () => {
+    setActiveId(masterId);
+    setSelectedId(null);
+  };
+
+  /**
+   * Replace a customized placement with a fresh master adaptation, opening it
+   * as a draft so the user reviews before saving. Without this, a saved
+   * snapshot could never rejoin the master lineage.
+   */
+  const resetVariant = (sizeId: SizePresetId) => {
+    const preset = SIZE_PRESETS.find((p) => p.id === sizeId) ?? SIZE_PRESETS[0];
+    const draftId = variantDraftId(sizeId);
+    setTemplates((prev) => {
+      const fresh = sizeId === master.sizeId ? master : adaptTemplateToSize(master, preset);
+      const draft: Template = { ...fresh, id: draftId, updatedAt: Date.now() };
+      return [...prev.filter((t) => t.id !== draftId), draft];
+    });
+    setActiveId(draftId);
+    setSelectedId(null);
   };
 
   const [showAllSizes, setShowAllSizes] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [savedId, setSavedId] = useState<string | null>(null);
+  /**
+   * Owner draft preview link (legacy render + explicit draft flag). Shared
+   * feed URLs never carry the flag: anonymous readers always see the
+   * published snapshot.
+   */
+  const previewRenderLink = (templateId: string): string | null => {
+    if (!projectId || !product) return null;
+    try {
+      return buildRenderUrl(templateId, { projectId, draft: true }, product);
+    } catch {
+      return null;
+    }
+  };
+  const productRenderUrl = savedId && product
+    ? projectId
+      ? previewRenderLink(savedId)
+      : buildRenderUrl(savedId, domain, product)
+    : null;
 
   // Redirect to /login if a password is configured and we're not signed in
   useEffect(() => {
     fetch("/api/login")
       .then((r) => r.json())
-      .then((j) => {
-        if (j.configured && !j.authenticated) window.location.href = "/login?next=/editor";
+      .then((j: unknown) => {
+        const status = j as { configured?: boolean; authenticated?: boolean };
+        if (status.configured && !status.authenticated) router.push(`/login?next=${encodeURIComponent(`/editor${window.location.search}`)}`);
       })
       .catch(() => {});
-  }, []);
+  }, [router]);
 
   const saveToServer = async () => {
+    const draft = active;
+    if (editingVariantSize) {
+      await saveVariantPlacement(editingVariantSize, draft);
+      return;
+    }
+    const savedDraft = savedTemplates[draft.id];
     setSaving(true);
+    setSaveError(null);
     try {
-      const res = await fetch("/api/templates", {
-        method: "POST",
+      const res = await fetch(projectId ? "/api/projects" : "/api/templates", {
+        method: projectId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(active),
+        body: JSON.stringify(projectId
+          ? { id: projectId, template: draft, placement: projectPlacement, expectedRevision: projectRevision }
+          : { ...draft, expectedRevision: savedDraft?.revision ?? 0 }),
       });
-      const json = await res.json();
+      const json = await res.json() as {
+        error?: string;
+        retryable?: boolean;
+        templateId?: string;
+        id?: string;
+        templateRevision?: number;
+        revision?: number;
+      };
       if (res.status === 401) {
-        window.location.href = "/login?next=/editor";
+        router.push(`/login?next=${encodeURIComponent(`/editor${window.location.search}`)}`);
         return;
       }
-      if (!res.ok) throw new Error(json.error || "Save failed");
-      setSavedId(json.id);
-      if (json.id !== active.id) {
-        setTemplates((prev) => prev.map((t) => (t.id === active.id ? { ...t, id: json.id } : t)));
-        setActiveId(json.id);
+      if (!res.ok) {
+        setSaveError({ message: json.error || "Save failed", retryable: json.retryable !== false });
+        return;
+      }
+      const savedTemplateId = json.templateId || json.id;
+      if (!savedTemplateId) {
+        setSaveError({ message: "The server did not return the saved template id.", retryable: true });
+        return;
+      }
+      const templateRevision = Number(json.templateRevision ?? json.revision ?? 0);
+      const savedVersion = { ...draft, id: savedTemplateId, revision: templateRevision };
+      setSavedTemplates((previous) => {
+        const next = { ...previous };
+        delete next[draft.id];
+        next[savedTemplateId] = {
+          templateId: savedTemplateId,
+          fingerprint: templateFingerprint(savedVersion),
+          revision: templateRevision,
+        };
+        return next;
+      });
+      if (projectId) setProjectRevision(Number(json.revision ?? projectRevision));
+      if (savedTemplateId !== active.id) {
+        setTemplates((prev) => prev.map((t) => (t.id === draft.id ? { ...t, id: savedTemplateId, revision: templateRevision } : t)));
+        setActiveId((current) => current === draft.id ? savedTemplateId : current);
+      } else {
+        setTemplates((prev) => prev.map((t) => (t.id === draft.id ? { ...t, revision: templateRevision } : t)));
       }
     } catch (e) {
-      alert(String(e));
+      setSaveError({
+        message: e instanceof Error ? e.message : "The save could not be confirmed.",
+        retryable: true,
+      });
     } finally {
       setSaving(false);
     }
   };
 
-  const exportJson = () => {
-    const blob = new Blob([JSON.stringify(active, null, 2)], { type: "application/json" });
+  /**
+   * Save one variant per placement. Project mode is a single atomic PATCH:
+   * the server validates all four before writing, so a failure retains every
+   * draft and prior saved record. Legacy standalone mode keeps separate
+   * template writes and reports the exact per-placement outcome.
+   */
+  const saveAllVariants = async () => {
+    // Candidates follow the same lineage the cards display: open drafts,
+    // live master, saved snapshots, then fresh adaptations. What you see is
+    // what gets persisted; untouched customizations are never silently
+    // replaced by a master adaptation.
+    const candidates = SIZE_PRESET_IDS.map((sizeId) => ({
+      sizeId,
+      variant: placementView(master, SIZE_PRESETS, sizeId, variantEntry(sizeId), placementSnapshots[sizeId]),
+    }));
+    setSaving(true);
+    setSaveError(null);
+    setSaveNotice(null);
+    try {
+      if (projectId) {
+        const placementTemplates: Record<string, unknown> = {};
+        for (const { sizeId, variant } of candidates) placementTemplates[sizeId] = variant;
+        const res = await fetch("/api/projects", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          // Persist the master draft as the active template in the same
+          // atomic write so reopening restores the latest design, not the
+          // older active template.
+          body: JSON.stringify({ id: projectId, template: master, placementTemplates, expectedRevision: projectRevision }),
+        });
+        const json = await res.json() as {
+          error?: string;
+          retryable?: boolean;
+          revision?: number;
+          templateId?: string;
+          templateRevision?: number;
+          variants?: { sizeId: string; templateId: string; templateRevision: number; width: number; height: number }[];
+        };
+        if (res.status === 401) {
+          router.push(`/login?next=${encodeURIComponent(`/editor${window.location.search}`)}`);
+          return;
+        }
+        if (!res.ok) {
+          setSaveError({ message: json.error || "Could not save every size.", retryable: json.retryable !== false });
+          return;
+        }
+        const returned = new Map((json.variants ?? []).map((variant) => [variant.sizeId, variant]));
+        const next: Partial<Record<SizePresetId, SavedTemplateRecord>> = {};
+        for (const { sizeId, variant } of candidates) {
+          const confirmed = returned.get(sizeId);
+          if (!confirmed) {
+            setSaveError({ message: `The server did not confirm placement ${sizeId}. Nothing was marked saved.`, retryable: true });
+            return;
+          }
+          next[sizeId] = {
+            templateId: confirmed.templateId,
+            fingerprint: placementFingerprint(variant),
+            revision: confirmed.templateRevision,
+          };
+        }
+        setSavedPlacements(next);
+        setPlacementSnapshots(Object.fromEntries(candidates.map(({ sizeId, variant }) => [sizeId, { ...variant }])) as Partial<Record<SizePresetId, Template>>);
+        setProjectRevision(Number(json.revision ?? projectRevision));
+        const masterRevision = Number(json.templateRevision ?? 0);
+        setSavedTemplates((previous) => ({
+          ...previous,
+          [master.id]: {
+            templateId: json.templateId || master.id,
+            fingerprint: templateFingerprint(master),
+            revision: masterRevision,
+          },
+        }));
+        setTemplates((prev) => prev.map((t) => (t.id === master.id ? { ...t, revision: masterRevision } : t)));
+        setSaveNotice(`Saved all 4 placements (project revision ${Number(json.revision ?? projectRevision)}).`);
+        return;
+      }
+      const results: VariantSaveResult[] = [];
+      const next: Partial<Record<SizePresetId, SavedTemplateRecord>> = { ...savedPlacements };
+      for (const { sizeId, variant } of candidates) {
+        const toSave = { ...variant, id: undefined };
+        try {
+          const res = await fetch("/api/templates", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(toSave) });
+          const json = await res.json() as { error?: string; templateId?: string; id?: string; revision?: number };
+          if (res.status === 401) {
+            router.push(`/login?next=${encodeURIComponent(`/editor${window.location.search}`)}`);
+            return;
+          }
+          if (!res.ok) throw new Error(json.error || `Could not save ${sizeId}`);
+          const savedTemplateId = json.templateId || json.id;
+          if (!savedTemplateId) throw new Error(`No template id returned for ${sizeId}`);
+          next[sizeId] = {
+            templateId: savedTemplateId,
+            fingerprint: placementFingerprint(variant),
+            revision: Number(json.revision ?? 0),
+          };
+          results.push({ sizeId, ok: true });
+        } catch (error) {
+          results.push({ sizeId, ok: false, error: error instanceof Error ? error.message : String(error) });
+        }
+      }
+      setSavedPlacements(next);
+      const summary = summarizeVariantSaves(results);
+      if (summary.failed.length === 0) {
+        const bySize = new Map(candidates.map((candidate) => [candidate.sizeId, candidate.variant]));
+        setPlacementSnapshots((prev) => {
+          const copy = { ...prev };
+          for (const { sizeId } of candidates) copy[sizeId] = { ...(bySize.get(sizeId) as Template) };
+          return copy;
+        });
+        setSaveNotice(`Saved all ${summary.succeeded.length} size variants as separate templates. List via /api/templates?list=1`);
+      } else {
+        setSaveError({
+          message: `Saved ${summary.succeeded.length} of ${results.length}: ${summary.failed.map((failure) => `${failure.sizeId} (${failure.error})`).join(", ")}. Saved placements kept their links; retry the failed sizes.`,
+          retryable: true,
+        });
+      }
+    } catch (error) {
+      setSaveError({ message: error instanceof Error ? error.message : "Could not save every size.", retryable: true });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /**
+   * Save the open per-size draft without touching other placements. The
+   * server merges the single key; every other placement keeps its saved
+   * record, so only this card changes state.
+   */
+  const saveVariantPlacement = async (sizeId: SizePresetId, draft: Template) => {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      if (projectId) {
+        const res = await fetch("/api/projects", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: projectId, placementTemplates: { [sizeId]: draft }, expectedRevision: projectRevision }),
+        });
+        const json = await res.json() as {
+          error?: string;
+          retryable?: boolean;
+          revision?: number;
+          variants?: { sizeId: string; templateId: string; templateRevision: number }[];
+        };
+        if (res.status === 401) {
+          router.push(`/login?next=${encodeURIComponent(`/editor${window.location.search}`)}`);
+          return;
+        }
+        if (!res.ok) {
+          setSaveError({ message: json.error || `Could not save the ${sizeId} variant.`, retryable: json.retryable !== false });
+          return;
+        }
+        const confirmed = (json.variants ?? []).find((variant) => variant.sizeId === sizeId);
+        if (!confirmed) {
+          setSaveError({ message: `The server did not confirm placement ${sizeId}. Nothing was marked saved.`, retryable: true });
+          return;
+        }
+        setSavedPlacements((prev) => ({
+          ...prev,
+          [sizeId]: { templateId: confirmed.templateId, fingerprint: placementFingerprint(draft), revision: confirmed.templateRevision },
+        }));
+        setPlacementSnapshots((prev) => ({ ...prev, [sizeId]: { ...draft } }));
+        setProjectRevision(Number(json.revision ?? projectRevision));
+        setSaveNotice(`Saved the ${sizeId} variant (project revision ${Number(json.revision ?? projectRevision)}). Other placements unchanged.`);
+        return;
+      }
+      const res = await fetch("/api/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...draft, id: undefined }),
+      });
+      const json = await res.json() as { error?: string; templateId?: string; id?: string; revision?: number };
+      if (res.status === 401) {
+        router.push(`/login?next=${encodeURIComponent(`/editor${window.location.search}`)}`);
+        return;
+      }
+      if (!res.ok) throw new Error(json.error || `Could not save the ${sizeId} variant.`);
+      const savedTemplateId = json.templateId || json.id;
+      if (!savedTemplateId) throw new Error(`No template id returned for ${sizeId}.`);
+      setSavedPlacements((prev) => ({
+        ...prev,
+        [sizeId]: { templateId: savedTemplateId, fingerprint: placementFingerprint(draft), revision: Number(json.revision ?? 0) },
+      }));
+      setPlacementSnapshots((prev) => ({ ...prev, [sizeId]: { ...draft } }));
+      setSaveNotice(`Saved the ${sizeId} variant as a separate template.`);
+    } catch (e) {
+      setSaveError({ message: e instanceof Error ? e.message : `Could not save the ${sizeId} variant.`, retryable: true });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /**
+   * Publish the saved draft: freeze products, validation, and templates into
+   * the durable publication record. The stable feed URL does not change;
+   * anonymous readers move to the new snapshot on success and keep the old
+   * one on failure.
+   */
+  const publishProject = async () => {
+    if (!projectId) return;
+    setPublishing(true);
+    setSaveError(null);
+    try {
+      const res = await fetch("/api/projects/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: projectId, expectedRevision: projectRevision }),
+      });
+      const json = await res.json() as {
+        error?: string;
+        code?: string;
+        retryable?: boolean;
+        projectRevision?: number;
+        publishedAt?: number;
+        feedUrl?: string;
+        attempt?: NonNullable<NonNullable<typeof publication>["lastAttempt"]>;
+      };
+      if (res.status === 401) {
+        router.push(`/login?next=${encodeURIComponent(`/editor${window.location.search}`)}`);
+        return;
+      }
+      if (!res.ok) {
+        if (json.attempt) {
+          setPublication((prev) => ({ active: prev?.active ?? null, lastAttempt: json.attempt ?? null }));
+        }
+        setSaveError({ message: json.error || "Publish failed.", retryable: json.retryable !== false });
+        return;
+      }
+      setPublication({
+        active: { publishedAt: Number(json.publishedAt ?? Date.now()), projectRevision: Number(json.projectRevision ?? projectRevision) },
+        lastAttempt: json.attempt ?? null,
+      });
+      setSaveNotice(`Published revision ${Number(json.projectRevision ?? projectRevision)} — the feed URL is unchanged.`);
+    } catch (e) {
+      setSaveError({ message: e instanceof Error ? e.message : "Publish failed.", retryable: true });
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const exportJson = () => {    const blob = new Blob([JSON.stringify(active, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -196,13 +689,9 @@ export default function EditorPage() {
 
   const handleExportPng = async () => {
     // Try server render first if template saved (public capability URL)
-    if (savedId && product) {
-      const handle = product.link.split("/products/")[1]?.split("?")[0];
-      if (handle) {
-        const url = `/api/render?templateId=${encodeURIComponent(savedId)}&handle=${encodeURIComponent(handle)}&domain=${encodeURIComponent(domain)}`;
-        window.open(url, "_blank");
-        return;
-      }
+    if (productRenderUrl) {
+      window.open(productRenderUrl, "_blank");
+      return;
     }
     const el = exportRef.current;
     if (!el) return;
@@ -290,17 +779,23 @@ export default function EditorPage() {
     <div className="min-h-screen bg-zinc-50 text-zinc-900 flex flex-col">
       <header className="border-b bg-white sticky top-0 z-20">
         <div className="max-w-[1600px] mx-auto px-4 py-3 flex items-center gap-4">
-          <a href="/" className="font-semibold tracking-tight">Catalog Forge</a>
+          <Link href="/" className="font-semibold tracking-tight">Catalog Forge</Link>
           <span className="text-zinc-300">/</span>
           <span className="text-sm font-medium">Editor (HTML)</span>
           <a href="/story-map" className="ml-2 text-xs px-2 py-1 border rounded">Story Map</a>
           <div className="ml-auto flex items-center gap-2">
             <div className="hidden sm:flex items-center gap-2 text-xs">
-              <span className="text-zinc-500">Domain</span>
-              <input value={domain} onChange={(e) => setDomain(e.target.value)} className="border rounded px-2 py-1 font-mono text-xs w-44" />
-              <button onClick={fetchProducts} disabled={loading} className="px-3 py-1 bg-zinc-900 text-white rounded text-xs disabled:opacity-50">{loading ? "..." : "Load"}</button>
+              <span className="text-zinc-500">{projectId ? "Source" : "Domain"}</span>
+              <input value={domain} onChange={(e) => setDomain(e.target.value)} disabled={Boolean(projectId)} className="border rounded px-2 py-1 font-mono text-xs w-44 disabled:bg-zinc-50" />
+              {!projectId && <button onClick={fetchProducts} disabled={loading} className="px-3 py-1 bg-zinc-900 text-white rounded text-xs disabled:opacity-50">{loading ? "..." : "Load"}</button>}
             </div>
-            <select value={active.sizeId} onChange={(e) => changeSize(e.target.value)} className="border rounded px-2 py-1 text-xs">
+            <select
+              value={active.sizeId}
+              onChange={(e) => changeSize(e.target.value)}
+              disabled={Boolean(editingVariantSize)}
+              title={editingVariantSize ? "Return to the master before switching its size" : "Switch the master size"}
+              className="border rounded px-2 py-1 text-xs disabled:opacity-50"
+            >
               {SIZE_PRESETS.map((s) => (
                 <option key={s.id} value={s.id}>{s.label}</option>
               ))}
@@ -312,11 +807,31 @@ export default function EditorPage() {
               <button onClick={() => setScale((s) => Math.min(1, s + 0.05))} className="px-1">+</button>
             </div>
             <button onClick={exportJson} className="hidden sm:inline-flex px-3 py-1.5 border rounded text-xs">Export JSON</button>
-            <button onClick={saveToServer} disabled={saving} className="px-3 py-1.5 bg-white border rounded text-xs disabled:opacity-50">{saving ? "Saving…" : savedId ? "Saved ✓" : "Save to Server"}</button>
+            <button
+              onClick={saveToServer}
+              disabled={saving || headerSaved || saveError?.retryable === false}
+              className={`px-3 py-1.5 border rounded text-xs disabled:opacity-70 ${headerSaved ? "bg-green-50 border-green-300 text-green-800" : "bg-white"}`}
+            >
+              {saving ? "Saving…" : headerSaved ? "Saved ✓" : saveError?.retryable ? "Retry save" : saveError ? "Reload required" : savedTemplate ? "Save changes" : "Save to Server"}
+            </button>
             <button onClick={handleExportPng} className="px-3 py-1.5 bg-zinc-900 text-white rounded text-xs">Export PNG</button>
           </div>
         </div>
       </header>
+
+      {projectError && <div className="bg-red-50 border-b border-red-200 px-4 py-2 text-sm text-red-800">{projectError}</div>}
+      {webmcpProbeEnabled && projectId && <WebmcpSpike projectId={projectId} template={active} onSetBackground={setProbeBackground} />}
+      {saveError && (
+        <div className="bg-red-50 border-b border-red-200 px-4 py-2 text-sm text-red-800 flex items-center gap-3">
+          <span>{saveError.message} Your draft remains in the editor.</span>
+          {saveError.retryable && <button onClick={saveToServer} disabled={saving} className="ml-auto px-3 py-1 border border-red-300 bg-white rounded text-xs">Retry save</button>}
+        </div>
+      )}
+      {!isSaved && savedTemplate && !saveError && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-sm text-amber-900">
+          Unsaved changes — save this revision before using its server PNG or enriched feed.
+        </div>
+      )}
 
       <div className="flex flex-1 min-h-0">
         {/* Left layers */}
@@ -334,6 +849,12 @@ export default function EditorPage() {
 
         {/* Center canvas */}
         <div className="flex-1 flex flex-col min-w-0 bg-zinc-100">
+          {editingVariantSize && (
+            <div className="bg-amber-50 border-b px-4 py-1.5 flex gap-2 items-center text-xs">
+              <span>Editing the {editingVariantSize} variant independently — other placements are unaffected.</span>
+              <button onClick={backToMaster} className="ml-auto px-2 py-1 border rounded bg-white">Back to master</button>
+            </div>
+          )}
           {/* AI assist bar */}
           <div className="bg-white border-b px-4 py-2 flex gap-2 items-center">
             <span className="text-xs font-medium shrink-0">AI Assist</span>
@@ -352,40 +873,61 @@ export default function EditorPage() {
               <div className="text-xs text-zinc-600 mb-3 flex items-center gap-2">
                 <span>Auto-layout preview — same design adapted to every placement. Bottom-anchored title/price stay fixed, product image stretches.</span>
                 <button
-                  onClick={async () => {
-                    for (const preset of SIZE_PRESETS) {
-                      const variant = preset.id === active.sizeId ? active : adaptTemplateToSize(active, preset);
-                      const toSave = { ...variant, id: undefined, name: `${active.name} — ${preset.id}` };
-                      const res = await fetch("/api/templates", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(toSave) });
-                      if (res.status === 401) {
-                        window.location.href = "/login?next=/editor";
-                        return;
-                      }
-                    }
-                    alert("Saved 4 size variants as separate templates. List via /api/templates?list=1");
-                  }}
+                  onClick={saveAllVariants}
+                  disabled={saving}
                   className="ml-auto text-[11px] px-2 py-1 bg-zinc-900 text-white rounded"
                 >
                   Save all 4 variants
                 </button>
+                {saveNotice && <span className="text-[11px] px-2 py-0.5 bg-green-100 border border-green-200 rounded">{saveNotice}</span>}
                 <span className="text-[11px] px-2 py-0.5 bg-green-100 border border-green-200 rounded">Active: {active.sizeId} is master</span>
               </div>
               <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
                 {SIZE_PRESETS.map((preset) => {
-                  const variant = preset.id === active.sizeId ? active : adaptTemplateToSize(active, preset);
+                  const sizeId = preset.id as SizePresetId;
+                  const entry = variantEntry(sizeId);
+                  const snapshot = placementSnapshots[sizeId];
+                  const variant = placementView(master, SIZE_PRESETS, sizeId, entry, snapshot);
                   const previewScale = preset.id === "9:16" ? 0.22 : preset.id === "4:5" ? 0.26 : preset.id === "1.91:1" ? 0.24 : 0.28;
+                  const placementRecord = savedPlacements[sizeId];
+                  const placementSaved = isPlacementSaved(master, SIZE_PRESETS, sizeId, placementRecord?.fingerprint, variant);
+                  const placementPng = placementSaved && placementRecord && product
+                    ? projectId
+                      ? previewRenderLink(placementRecord.templateId)
+                      : buildRenderUrl(placementRecord.templateId, domain, product)
+                    : null;
+                  const isEditingCard = entry ? activeId === entry.id : (!editingVariantSize && preset.id === active.sizeId);
+                  const adaptedFresh = sizeId === master.sizeId ? master : adaptTemplateToSize(master, preset);
+                  const canReset = !entry && snapshot && sizeId !== master.sizeId
+                    && placementFingerprint(snapshot) !== placementFingerprint(adaptedFresh);
                   return (
                     <div key={preset.id} className="bg-white rounded-lg border p-3 flex flex-col items-center">
                       <div className="text-xs font-medium mb-2 flex items-center gap-2">
                         <span>{preset.label}</span>
-                        {preset.id === active.sizeId && <span className="text-[10px] px-1.5 py-0.5 bg-zinc-900 text-white rounded">editing</span>}
+                        {isEditingCard && <span className="text-[10px] px-1.5 py-0.5 bg-zinc-900 text-white rounded">editing</span>}
                       </div>
                       <div className="border bg-zinc-50 overflow-hidden" style={{ width: variant.width * previewScale, height: variant.height * previewScale }}>
                         <TemplateRenderer template={variant} product={product} scale={previewScale} />
                       </div>
                       <div className="text-[11px] text-zinc-500 mt-2">{variant.width}×{variant.height}</div>
-                      {savedId && product && (
-                        <a href={`/api/render?templateId=${savedId}&handle=${product.link.split("/products/")[1]?.split("?")[0]}&domain=${encodeURIComponent(domain)}`} target="_blank" className="text-[11px] text-blue-600 underline mt-1">PNG</a>
+                      {placementPng ? (
+                        <a href={placementPng} target="_blank" className="text-[11px] text-blue-600 underline mt-1">PNG</a>
+                      ) : placementRecord ? (
+                        <span className="text-[11px] text-amber-700 mt-1">Stale — save again</span>
+                      ) : (
+                        <span className="text-[11px] text-zinc-400 mt-1">Not saved</span>
+                      )}
+                      {entry && activeId === entry.id ? (
+                        <span className="text-[11px] text-zinc-500 mt-1">Editing this variant</span>
+                      ) : sizeId === master.sizeId && !entry ? null : (
+                        <button onClick={() => openVariant(sizeId)} className="text-[11px] text-zinc-600 underline mt-1">
+                          {entry ? "Resume variant edit" : "Edit this size"}
+                        </button>
+                      )}
+                      {canReset && (
+                        <button onClick={() => resetVariant(sizeId)} className="text-[11px] text-zinc-500 underline mt-1">
+                          Reset to master
+                        </button>
                       )}
                     </div>
                   );
@@ -487,15 +1029,85 @@ export default function EditorPage() {
         <span className="font-medium">Tip:</span> Open on desktop for full layers + properties. Mobile supports drag + AI prompts.
       </div>
 
-      {/* Enriched feed bar — shown when saved */}
-      {savedId && (
+      {/* Published feed bar (project mode) or enriched feed bar (legacy mode) */}
+      {projectId ? (
+        publication !== undefined && (
+          <div className="bg-violet-50 border-t border-violet-200 px-4 py-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-violet-900">Published Feed</span>
+              {publication?.active ? (
+                <span className="text-xs px-2 py-0.5 bg-violet-600 text-white rounded-full">
+                  Live: rev {publication.active.projectRevision} · {new Date(publication.active.publishedAt).toLocaleString()}
+                </span>
+              ) : (
+                <span className="text-xs px-2 py-0.5 bg-zinc-200 text-zinc-700 rounded-full">
+                  {publication === null ? "Publication status unavailable" : "Not published yet"}
+                </span>
+              )}
+              {projectValidation && (
+                <span className={`text-xs px-2 py-0.5 rounded-full ${projectValidation.status === "blocked" ? "bg-red-600 text-white" : projectValidation.status === "needs-review" ? "bg-amber-400 text-amber-950" : "bg-green-600 text-white"}`}>
+                  Catalog: {projectValidation.status === "blocked" ? "blocked" : projectValidation.status === "needs-review" ? "review needed" : "ready"}
+                </span>
+              )}
+              <button
+                onClick={publishProject}
+                disabled={publishing}
+                className="ml-auto text-xs px-3 py-1 bg-violet-600 text-white rounded disabled:opacity-50"
+              >
+                {publishing ? "Publishing…" : publication?.active ? "Republish" : "Publish"}
+              </button>
+            </div>
+            {publication?.active ? (
+              <>
+                <code className="block text-xs font-mono bg-white border rounded px-3 py-2 break-all">{`${typeof window !== "undefined" ? window.location.origin : ""}/api/feed?projectId=${projectId}`}</code>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${window.location.origin}/api/feed?projectId=${projectId}`);
+                      alert("Published feed URL copied — keep it private, it works as a share link for Meta");
+                    }}
+                    className="text-xs px-3 py-1 bg-violet-600 text-white rounded"
+                  >
+                    Copy Published Feed URL
+                  </button>
+                  <a
+                    href={`/api/feed?projectId=${encodeURIComponent(projectId)}`}
+                    target="_blank"
+                    className="text-xs px-3 py-1 border bg-white rounded"
+                  >
+                    Download CSV
+                  </a>
+                  {projectRevision > publication.active.projectRevision && (
+                    <span className="text-[11px] text-amber-700">Draft changed since publication — republish to update the live feed.</span>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="text-[11px] text-violet-700">Publishing freezes the current products, validation, and design into a stable feed URL. Saving a draft never changes the live feed.</div>
+            )}
+            {publication?.lastAttempt?.status === "failed" && (
+              <div className="text-[11px] text-amber-700">
+                Last publish failed: {publication.lastAttempt.error?.message ?? "unknown error"} The live feed was preserved.
+              </div>
+            )}
+            <div className="text-[11px] text-violet-700">Treat this URL like a private share link — project IDs are unguessable, no login needed for Meta. Publishing does not submit anything to Meta; import the URL as a catalog data source yourself.</div>
+          </div>
+        )
+      ) : (
+        savedId && (
         <div className="bg-violet-50 border-t border-violet-200 px-4 py-3 space-y-2">
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-violet-900">Enriched Feed (server raster)</span>
             <span className="text-xs px-2 py-0.5 bg-violet-600 text-white rounded-full">Saved: {savedId}</span>
+            {projectValidation && (
+              <span className={`text-xs px-2 py-0.5 rounded-full ${projectValidation.status === "blocked" ? "bg-red-600 text-white" : projectValidation.status === "needs-review" ? "bg-amber-400 text-amber-950" : "bg-green-600 text-white"}`}>
+                Catalog: {projectValidation.status === "blocked" ? "blocked" : projectValidation.status === "needs-review" ? "review needed" : "ready"}
+              </span>
+            )}
             <button
               onClick={() => {
-                const url = `${window.location.origin}/api/feed?domain=${encodeURIComponent(domain)}&templateId=${encodeURIComponent(savedId)}`;
+                const target = projectId ? `projectId=${encodeURIComponent(projectId)}` : `domain=${encodeURIComponent(domain)}`;
+                const url = `${window.location.origin}/api/feed?${target}&templateId=${encodeURIComponent(savedId)}`;
                 navigator.clipboard.writeText(url);
                 alert("Enriched feed URL copied — keep it private, it works as a share link for Meta");
               }}
@@ -504,22 +1116,23 @@ export default function EditorPage() {
               Copy Enriched Feed URL
             </button>
             <a
-              href={`/api/feed?domain=${encodeURIComponent(domain)}&templateId=${encodeURIComponent(savedId)}`}
+              href={`/api/feed?${projectId ? `projectId=${encodeURIComponent(projectId)}` : `domain=${encodeURIComponent(domain)}`}&templateId=${encodeURIComponent(savedId)}`}
               target="_blank"
               className="text-xs px-3 py-1 border bg-white rounded"
             >
               Download CSV
             </a>
           </div>
-          <code className="block text-xs font-mono bg-white border rounded px-3 py-2 break-all">{`${typeof window !== "undefined" ? window.location.origin : ""}/api/feed?domain=${domain}&templateId=${savedId}`}</code>
-          <div className="text-[11px] text-violet-700">image_link now points to <code className="bg-white px-1 rounded">/api/render?templateId={savedId}&handle=...</code> — Meta will fetch PNGs rendered via next/og. Try one: {product && <a href={`/api/render?templateId=${savedId}&handle=${product.link.split("/products/")[1]?.split("?")[0]}&domain=${encodeURIComponent(domain)}`} target="_blank" className="underline">preview current product PNG</a>}</div>
+          <code className="block text-xs font-mono bg-white border rounded px-3 py-2 break-all">{`${typeof window !== "undefined" ? window.location.origin : ""}/api/feed?${projectId ? `projectId=${projectId}` : `domain=${domain}`}&templateId=${savedId}`}</code>
+          <div className="text-[11px] text-violet-700">Feed images use the exact product variant. {productRenderUrl && <a href={productRenderUrl} target="_blank" className="underline">Preview current product PNG</a>}</div>
           <div className="text-[11px] text-violet-700">Treat this URL like a private share link — template IDs are unguessable, no login needed for Meta.</div>
-        </div>
+          </div>
+        )
       )}
 
       {/* Size + feed preview bar */}
       <div className="bg-white border-t px-4 py-3 flex items-center gap-4">
-        <div className="text-xs text-zinc-600">HTML templates double as ad creatives — no canvas lib. {savedId ? "Saved to server — use Enriched Feed above." : "Save to Server to enable enriched feed (image_link → /api/render)."}</div>
+        <div className="text-xs text-zinc-600">HTML templates double as ad creatives — no canvas lib. {isSaved ? "This revision is saved — use Enriched Feed above." : savedTemplate ? "This design has unsaved changes; save before using server output." : "Save to Server to enable enriched feed (image_link → /api/render)."}</div>
         <div className="ml-auto flex gap-2">
           <div className="hidden sm:flex items-center gap-2">
             {SIZE_PRESETS.map((s) => (
@@ -533,6 +1146,7 @@ export default function EditorPage() {
                 const t = createDefaultTemplate(active.sizeId);
                 setTemplates((p) => [...p, t]);
                 setActiveId(t.id);
+                setSaveError(null);
               }}
               className="px-3 py-1 border rounded text-xs"
             >
