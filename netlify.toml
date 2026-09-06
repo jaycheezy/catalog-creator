@@ -8,3 +8,7 @@
 
 [build.environment]
   NODE_VERSION = "20"
+  # R2 bucket names are public identifiers (they also appear in wrangler.jsonc
+  # and build output), not secrets: exclude them from secrets scanning while
+  # keeping the scan active for real credentials (keys, admin password).
+  SECRETS_SCAN_OMIT_KEYS = "R2_TEMPLATES_BUCKET,R2_RENDERS_BUCKET"
