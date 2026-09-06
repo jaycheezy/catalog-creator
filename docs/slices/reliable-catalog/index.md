@@ -32,7 +32,7 @@ Deferred work includes OAuth/private stores, scheduled upstream synchronization,
 | Product identity | `FeedRow.source_id` is the internal stable render identity. Exported `id` remains the merchant-facing Meta ID. Never fall back from an unknown explicit `source_id` to a handle or another variant. |
 | Revisions | Project and template revisions increase only after a confirmed durable save. Editor dirty state compares design content with the confirmed saved revision. Remaining stories add placement and product-content revision tokens to asset URLs. |
 | Storage | Draft projects and standalone templates use `TEMPLATES_BUCKET`; generated PNG bytes use `RENDERS_BUCKET`. `/tmp` is development/test fallback only. Production storage errors are explicit and retryable. |
-| Validation | `validateCatalog` is the one full-snapshot verdict used by preview, project, auditor, feed, and publication. Publication is blocked by errors or incomplete imports. Warnings remain visible and require explicit review rather than being relabeled ready. |
+| Validation | `validateCatalog` is the one full-snapshot verdict used by preview, project, auditor, feed, and publication. Publication publishes rows without errors and skips rows with errors, recording the skipped product IDs; it is blocked by incomplete imports, empty catalogs, or catalogs with nothing publishable. Warnings remain visible and require explicit review rather than being relabeled ready. |
 | Access | Project/template mutations require the existing admin session. Public feed and render URLs contain capability IDs, no credentials, and bounded validated parameters. Preserve render rate limiting and avoid logging capability URLs. |
 
 ### Placement output contract

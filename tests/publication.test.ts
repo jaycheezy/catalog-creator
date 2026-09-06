@@ -119,11 +119,39 @@ describe("project publication endpoint", () => {
     expect(record).toBeNull();
   });
 
-  it("blocks validation errors and incomplete imports while recording the attempt", async () => {
-    draft = { ...validProject(), products: [{ ...validProject().products[0], price: "19.95" }] };
+  it("publishes valid rows while skipping invalid ones with a warning", async () => {
+    draft = { ...validProject(), products: [{ ...validProject().products[0], price: "19.95" }, validProject().products[1]] };
+    const response = await publish(publishRequest({ id: projectId, expectedRevision: 3 }));
+    expect(response.status).toBe(200);
+    const json = await response.json() as {
+      skipped: { productIds: string[]; codes: string[] };
+      publishedRows: number;
+      totalRows: number;
+    };
+    expect(json.publishedRows).toBe(1);
+    expect(json.totalRows).toBe(2);
+    expect(json.skipped.productIds).toEqual(["MUG-SMALL"]);
+    expect(json.skipped.codes).toEqual(["invalid-price"]);
+    expect(record?.active?.products.map((row) => row.id)).toEqual(["MUG-LARGE"]);
+    expect(record?.lastAttempt).toMatchObject({ status: "success", attemptedRevision: 3 });
+    // The skipped row never reaches the public feed.
+    vi.mocked(isAuthenticated).mockResolvedValue(false);
+    const csv = await (await anonFeed()).text();
+    expect(csv).not.toContain("MUG-SMALL");
+    expect(csv).toContain("MUG-LARGE");
+  });
+
+  it("rejects a catalog with nothing publishable and incomplete imports", async () => {
+    draft = {
+      ...validProject(),
+      products: validProject().products.map((row) => ({ ...row, price: "broken" })),
+    };
     const blocked = await publish(publishRequest({ id: projectId, expectedRevision: 3 }));
     expect(blocked.status).toBe(422);
-    expect(await blocked.json()).toMatchObject({ code: "VALIDATION_BLOCKED" });
+    const blockedJson = await blocked.json() as { code: string; error: string };
+    expect(blockedJson).toMatchObject({ code: "VALIDATION_BLOCKED" });
+    expect(blockedJson.error).toContain("invalid-price");
+    expect(blockedJson.error).not.toContain("image-dimensions-unverified");
     expect(record?.active).toBeNull();
     expect(record?.lastAttempt).toMatchObject({ status: "failed", attemptedRevision: 3 });
 
@@ -213,9 +241,14 @@ describe("project publication endpoint", () => {
     const reopened = await projectGet(new NextRequest(`${app}/api/projects?id=${projectId}`));
     expect(reopened.status).toBe(200);
     const json = await reopened.json() as {
-      publication: { active: { projectRevision: number; publishedAt: number } | null; lastAttempt: { status: string } | null };
+      publication: {
+        active: { projectRevision: number; publishedAt: number; publishedRows: number; skippedProductIds: string[] } | null;
+        lastAttempt: { status: string } | null;
+      };
     };
     expect(json.publication.active?.projectRevision).toBe(3);
+    expect(json.publication.active?.publishedRows).toBe(2);
+    expect(json.publication.active?.skippedProductIds).toEqual([]);
     expect(json.publication.lastAttempt?.status).toBe("success");
   });
 

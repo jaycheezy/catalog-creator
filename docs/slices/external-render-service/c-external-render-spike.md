@@ -2,7 +2,7 @@
 id: "c-external-render-spike"
 slice: "external-render-service"
 title: "Choose and prove the external Next renderer"
-step: "test"
+step: "connect"
 status: "in-review"
 effort: "M"
 order: 1

@@ -32,13 +32,17 @@ Only slice index and story files belong immediately inside each slice directory.
 
 Dependencies are prerequisites, not just related links. Unknown IDs, duplicate IDs and cycles fail validation. Independent stories may be assigned concurrently only if they have compatible file/contract ownership. A story that depends on a shared controller should wait for that controller contract; do not ask separate agents to invent it independently.
 
+## Move stories by drag and drop
+
+Drag a card onto another step column or slice row to move it. In local dev (`npm run dev`) the move is saved to the story's Markdown file — the `step` frontmatter field, plus the `slice` field with the file relocated into the target slice directory — and the map revalidates before saving. Production builds are read-only, so a failed save reverts the card and reports the error. Story IDs never change, so dependencies and notes keep working.
+
 ## Development and delivery
 
 `npm run dev` validates and bundles the Markdown, then watches `docs/slices` for changes. Valid edits refresh the generated data and Next.js view. Invalid edits are reported in the terminal and leave the last valid view in place until corrected.
 
 `npm run story-map:check` validates content and regenerates `src/story-map/generated.json`. The file is ignored and must not be edited manually. Standard build, test, typecheck, preview and deploy scripts generate it automatically. If using Next.js directly or an external build command, run the content check first.
 
-Markdown is bundled into the application during build. Production does not read repository files from the Cloudflare filesystem and does not write Markdown through HTTP. A production map updates with the next application build/deployment. No deployment is implied by editing a spec locally.
+The story map is a local-dev-only tool: `/story-map` and its spec pages 404 in production builds, and the move API refuses writes there. Markdown is bundled into the application during build. Production does not read repository files from the Cloudflare filesystem and does not write Markdown through HTTP. No deployment is implied by editing a spec locally.
 
 The migrated historical stories keep their recorded status and remain labeled as outlines unless detailed implementation instructions have been written. Migration does not independently verify old claims of completion.
 

@@ -77,7 +77,7 @@ export default function ValidatePage() {
           <div className="ml-auto flex gap-2">
             <Link href="/" className="text-xs px-3 py-1 border rounded">Feed</Link>
             <Link href={editorHref} className="text-xs px-3 py-1 border rounded">Editor</Link>
-            <Link href="/story-map" className="text-xs px-3 py-1 border rounded">Story Map</Link>
+            {process.env.NODE_ENV !== 'production' && <Link href="/story-map" className="text-xs px-3 py-1 border rounded">Story Map</Link>}
           </div>
         </div>
       </header>

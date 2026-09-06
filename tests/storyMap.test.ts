@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compileStoryMap, readStoryMap } from '../scripts/story-map-content.mjs';
+import { applyStoryMove, compileStoryMap, readStoryMap } from '../scripts/story-map-content.mjs';
 import { createHandoff, isReady, unmetDependencies, relatedNotes, sortNotes, type ImplementationNote, type Story, type Slice } from '../src/story-map/model';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement } from 'react';
@@ -67,6 +67,36 @@ describe('Markdown story map', () => {
     expect(html).toContain('<table>');
     expect(html).not.toContain('<script>');
     expect(html).not.toContain('href="javascript:');
+  });
+});
+
+describe('Story moves', () => {
+  const otherSlice = { path: 'docs/slices/other/index.md', source: frontmatter({ id: 'other', title: 'Other', description: 'Another outcome', order: 1, tone: 'green' }, '# Other') };
+  const moveFile = (id: string, storySlice: string, filename: string) => ({
+    path: `docs/slices/${storySlice}/${filename}.md`,
+    source: frontmatter({ id, title: id, slice: storySlice, step: 'design', status: 'ready', implementation: 'specified', effort: 'M', order: 0, tags: [], dependsOn: [], value: 'Saves you time by handling this step automatically, so you can focus on selling.' }, `# ${id}\n\n## Summary\n\nCard summary.\n\n## Acceptance criteria\n\n- First criterion\n\n## Scope\n\nDraft only.\n\n## Implementation guidance\n\nReuse the controller.\n\n## Interfaces\n\nPreserve IDs.\n\n## Validation\n\nVerify stale writes.\n\n## Completion handoff\n\nReport evidence.\n`),
+  });
+  it('moves a story between steps and slices, relocating the Markdown file', () => {
+    const moved = applyStoryMove([slice, file('one'), file('two')], { id: 'one', slice: 'example', step: 'validate' });
+    expect(moved.changed).toBe(true);
+    expect(moved.path).toBe('docs/slices/example/one.md');
+    expect(moved.files.find(entry => entry.path === moved.path)?.source).toContain('step: "validate"');
+    const across = applyStoryMove([slice, otherSlice, moveFile('one', 'example', 'one')], { id: 'one', slice: 'other', step: 'feed' }, { sliceIds: ['example', 'other'] });
+    expect(across.changed).toBe(true);
+    expect(across.prevPath).toBe('docs/slices/example/one.md');
+    expect(across.path).toBe('docs/slices/other/one.md');
+    expect(across.files.some(entry => entry.path === across.prevPath)).toBe(false);
+    expect(across.files.find(entry => entry.path === across.path)?.source).toContain('slice: "other"');
+  });
+  it('reports no-ops and rejects unknown targets and filename collisions', () => {
+    const files = [slice, file('one')];
+    const same = applyStoryMove(files, { id: 'one', slice: 'example', step: 'design' });
+    expect(same.changed).toBe(false);
+    expect(same.files).toBe(files);
+    expect(() => applyStoryMove(files, { id: 'missing', slice: 'example', step: 'design' })).toThrow('unknown story');
+    expect(() => applyStoryMove(files, { id: 'one', slice: 'nope', step: 'design' })).toThrow('unknown slice');
+    expect(() => applyStoryMove(files, { id: 'one', slice: 'example', step: 'nope' })).toThrow('unknown step');
+    expect(() => applyStoryMove([slice, otherSlice, moveFile('one', 'example', 'one'), moveFile('two', 'other', 'one')], { id: 'one', slice: 'other', step: 'feed' }, { sliceIds: ['example', 'other'] })).toThrow('already exists');
   });
 });
 

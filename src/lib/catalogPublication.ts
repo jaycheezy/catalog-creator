@@ -48,6 +48,8 @@ export type CatalogPublicationSnapshot = {
   template: Template;
   placementTemplates?: Partial<Record<SizePresetId, Template>>;
   importStatus: CatalogProject["importStatus"];
+  /** Rows excluded for error-severity issues, with the blocking codes. */
+  skipped: { productIds: string[]; codes: string[] };
 };
 
 export type PublicationAttempt = {
@@ -55,6 +57,8 @@ export type PublicationAttempt = {
   attemptedRevision: number;
   attemptedAt: number;
   error?: { message: string; code: string; retryable: boolean };
+  /** Rows skipped as invalid on a successful publish. */
+  skippedProductIds?: string[];
 };
 
 export type CatalogPublicationRecord = {
@@ -74,6 +78,7 @@ export function buildPublicationSnapshot(
   project: CatalogProject,
   validation: CatalogValidationResult,
   publishedAt: number,
+  skipped: { skippedProductIds: string[]; skippedCodes: string[] } = { skippedProductIds: [], skippedCodes: [] },
 ): CatalogPublicationSnapshot {
   return {
     schemaVersion: PUBLICATION_SCHEMA_VERSION,
@@ -87,18 +92,26 @@ export function buildPublicationSnapshot(
     template: structuredClone(project.template),
     placementTemplates: project.placementTemplates ? structuredClone(project.placementTemplates) : undefined,
     importStatus: structuredClone(project.importStatus),
+    skipped: { productIds: [...skipped.skippedProductIds], codes: [...skipped.skippedCodes] },
   };
 }
 
 /** Short public summary for the project response so reload restores status. */
 export function publicationSummary(record: CatalogPublicationRecord | null): {
-  active: { publishedAt: number; projectRevision: number } | null;
+  active: { publishedAt: number; projectRevision: number; publishedRows: number; skippedProductIds: string[] } | null;
   lastAttempt: PublicationAttempt | null;
 } {
   if (!record) return { active: null, lastAttempt: null };
+  // Older records predate the skipped field; treat them as fully published.
+  const skippedProductIds = record.active?.skipped?.productIds ?? [];
   return {
     active: record.active
-      ? { publishedAt: record.active.publishedAt, projectRevision: record.active.projectRevision }
+      ? {
+        publishedAt: record.active.publishedAt,
+        projectRevision: record.active.projectRevision,
+        publishedRows: record.active.products.length,
+        skippedProductIds,
+      }
       : null,
     lastAttempt: record.lastAttempt,
   };

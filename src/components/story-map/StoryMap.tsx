@@ -45,9 +45,16 @@ function StoryValue({ story }: { story: Story }) {
     </div>}
   </div>;
 }
-export function StoryMap({ stories, slices }: { stories: Story[]; slices: Slice[] }) {
+export function StoryMap({ stories: initialStories, slices }: { stories: Story[]; slices: Slice[] }) {
   const [view, setView] = useState({ step: 'all', sliceFilter: 'all', readyOnly: false, legacy: null as string | null, restored: false });
   const { step, sliceFilter, readyOnly, legacy, restored } = view;
+  const [stories, setStories] = useState(initialStories);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overCell, setOverCell] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- Adopt regenerated Markdown content when local dev rebuilds it after a saved move.
+  useEffect(() => { setStories(initialStories); }, [initialStories]);
   const setStep = (step: string) => setView(previous => ({ ...previous, step }));
   const setSliceFilter = (sliceFilter: string) => setView(previous => ({ ...previous, sliceFilter }));
   const setReadyOnly = (readyOnly: boolean) => setView(previous => ({ ...previous, readyOnly }));
@@ -70,6 +77,31 @@ export function StoryMap({ stories, slices }: { stories: Story[]; slices: Slice[
   const shownSlices = slices.filter(item => sliceFilter === 'all' || item.id === sliceFilter);
   const visibleStories = stories.filter(item => (step === 'all' || item.step === step) && (sliceFilter === 'all' || item.slice === sliceFilter) && (!readyOnly || isReady(item, stories)));
   const columns = { gridTemplateColumns: `190px repeat(${shownSteps.length}, minmax(220px, 1fr))` };
+  async function moveStory(storyId: string, sliceId: string, stepId: string) {
+    const current = stories.find(item => item.id === storyId);
+    if (!current || (current.slice === sliceId && current.step === stepId)) return;
+    const previous = stories;
+    setStories(list => list.map(item => item.id === storyId ? { ...item, slice: sliceId, step: stepId } : item));
+    setSavingId(storyId);
+    setNotice(null);
+    try {
+      const response = await fetch('/api/story-map/move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: storyId, slice: sliceId, step: stepId }),
+      });
+      const result = (await response.json().catch(() => ({}))) as { error?: unknown; path?: unknown };
+      if (!response.ok) throw new Error(typeof result.error === 'string' ? result.error : `Move failed (${response.status})`);
+      const targetSlice = slices.find(item => item.id === sliceId);
+      const stepTitle = steps.find(item => item.id === stepId)?.title ?? stepId;
+      setNotice({ kind: 'ok', text: `Moved “${current.title}” to ${targetSlice?.title ?? sliceId} · ${stepTitle} — saved to ${typeof result.path === 'string' ? result.path : 'Markdown'}.` });
+    } catch (error) {
+      setStories(previous);
+      setNotice({ kind: 'error', text: `Could not save the move: ${(error as Error).message}` });
+    } finally {
+      setSavingId(null);
+    }
+  }
   // Split header/body scroll sync: the journey header lives outside the body's
   // horizontal scroll container so it can stick to the page scroll. The body's
   // horizontal scroll position is mirrored onto the header (overflow-x-hidden
@@ -103,29 +135,53 @@ export function StoryMap({ stories, slices }: { stories: Story[]; slices: Slice[
         <button className="text-xs underline" onClick={() => { setStep('all'); setSliceFilter('all'); setReadyOnly(false); }}>Clear filters</button>
         <span role="status" className="ml-auto text-xs text-zinc-500">{visibleStories.length} stories shown</span>
       </div>
+      {notice && <div role={notice.kind === 'error' ? 'alert' : 'status'} className={`flex items-start justify-between gap-3 rounded-xl border p-3 text-sm ${notice.kind === 'error' ? 'border-red-200 bg-red-50 text-red-900' : 'border-green-200 bg-green-50 text-green-900'}`}><p>{notice.text}</p><button type="button" onClick={() => setNotice(null)} aria-label="Dismiss notice" className="rounded px-1 font-semibold leading-none hover:opacity-70">×</button></div>}
       {!visibleStories.length ? <p className="rounded-xl border bg-white p-8 text-center text-zinc-600">No stories match these filters. Clear filters to see the full map.</p> : <div aria-label="Story map by slice and journey step">
         <div ref={headerScrollRef} className="sticky top-[65px] z-20 overflow-x-hidden rounded-t-xl border border-b-0 bg-white">
           <div className="grid" style={columns}><div className="sticky left-0 z-30 border-b border-r bg-white p-4 text-xs font-medium">Slices ↓ · Journey →</div>{shownSteps.map(s => <div key={s.id} className="border-b border-r bg-white p-4"><h3 className="text-sm font-semibold">{s.title}</h3><p className="mt-1 text-xs text-zinc-500">{s.subtitle}</p></div>)}</div>
         </div>
         <div ref={bodyScrollRef} onScroll={syncHeaderScroll} className="overflow-x-auto rounded-b-xl border border-t-0 bg-white">
         {shownSlices.map(slice => <div key={slice.id} className="grid" style={columns}><div className={`sticky left-0 z-10 border-b border-r p-4 ${tones[slice.tone]}`}><h3 className="text-sm font-semibold">{slice.title}</h3><p className="mt-2 text-xs text-zinc-600">{slice.description}</p><p className="my-3 text-xs">{stories.filter(s => s.slice === slice.id && s.status === 'done').length}/{stories.filter(s => s.slice === slice.id).length} done</p><Link href={sliceUrl(slice)} className="text-xs font-medium underline underline-offset-4">Read slice spec →</Link><Link href={notesUrl(slice)} className="mt-3 block text-xs font-medium underline underline-offset-4">Implementation notes →</Link></div>
-          {shownSteps.map(s => <div key={s.id} className={`space-y-3 border-b border-r p-3 ${tones[slice.tone]}`}>
+          {shownSteps.map(s => {
+            const cellKey = `${slice.id}:${s.id}`;
+            return <div
+              key={s.id}
+              onDragOver={event => { event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'; setOverCell(cellKey); }}
+              onDragLeave={() => setOverCell(key => key === cellKey ? null : key)}
+              onDrop={event => {
+                event.preventDefault();
+                const id = event.dataTransfer?.getData('text/plain') || dragId;
+                setOverCell(null);
+                if (id) void moveStory(id, slice.id, s.id);
+              }}
+              className={`min-h-28 space-y-3 border-b border-r p-3 ${tones[slice.tone]} ${overCell === cellKey ? 'ring-2 ring-inset ring-violet-500' : ''}`}
+            >
             {visibleStories.filter(story => story.slice === slice.id && story.step === s.id).map(story => {
               const blocked = unmetDependencies(story, stories);
-              return <article key={story.id} id={story.id} className="relative rounded-lg border border-zinc-200 bg-white p-3 shadow-sm">
+              return <article
+                key={story.id}
+                id={story.id}
+                draggable
+                title="Drag to move to another column or slice"
+                onDragStart={event => { event.dataTransfer.setData('text/plain', story.id); event.dataTransfer.effectAllowed = 'move'; setDragId(story.id); }}
+                onDragEnd={() => { setDragId(null); setOverCell(null); }}
+                className={`relative cursor-grab rounded-lg border border-zinc-200 bg-white p-3 shadow-sm active:cursor-grabbing ${dragId === story.id ? 'opacity-50' : ''}`}
+              >
                 <div className="mb-2 flex items-start gap-2 text-[11px]"><span className={`rounded px-2 py-1 ${story.status === 'done' ? 'bg-green-100 text-green-800' : isReady(story, stories) ? 'bg-violet-100 text-violet-800' : 'bg-zinc-100 text-zinc-700'}`}>{statusLabels[story.status]}</span><span className="py-1 text-zinc-500">{story.effort}</span><StoryValue story={story} /></div>
                 <h4 className="text-sm font-semibold leading-snug">{story.title}</h4><p className="mt-2 text-xs leading-relaxed text-zinc-600">{story.description}</p>
+                {savingId === story.id && <p role="status" className="mt-2 text-[11px] font-medium text-violet-700">Saving move…</p>}
                 {story.acceptance.length > 0 && <details className="mt-3 text-xs"><summary className="cursor-pointer font-medium text-zinc-700">Acceptance criteria ({story.acceptance.length})</summary><ul className="mt-2 list-disc space-y-2 pl-4 text-zinc-600">{story.acceptance.map(a => <li key={a}>{a}</li>)}</ul></details>}
                 {story.implementation === 'outline' && <p className="mt-3 text-[11px] text-zinc-500">Spec outline · refine before assigning</p>}
                 {blocked.length > 0 && <div className="mt-3 border-t pt-2 text-xs text-amber-800"><p className="font-medium">Waiting on {blocked.length} {blocked.length === 1 ? 'story' : 'stories'}</p>{blocked.map(id => { const dependency = stories.find(item => item.id === id)!; return <Link key={id} href={storyUrl(dependency)} className="mt-1 block underline">{dependency.title}</Link>; })}</div>}
                 <Link href={storyUrl(story)} className="mt-4 inline-block text-xs font-semibold text-violet-800 underline underline-offset-4">View implementation spec →</Link>
               </article>;
             })}
-          </div>)}
+            </div>;
+          })}
         </div>)}
         </div>
       </div>}
-      <p className="text-xs text-zinc-500">Edit story Markdown to change shared scope, dependencies or status. Only your filters are stored in this browser.</p>
+      <p className="text-xs text-zinc-500">Drag a card to another column or slice to move it — moves save to the story Markdown in local dev. Edit story Markdown directly to change anything else. Only your filters are stored in this browser.</p>
     </main>
   </div>;
 }

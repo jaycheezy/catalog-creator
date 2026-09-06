@@ -84,12 +84,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: attempt.error?.message ?? "Publication failed.", code: attempt.error?.code ?? "PUBLICATION_FAILED", retryable: false, attempt }, { status: 422 });
   }
   const validation = validateCatalog(project.products, { importComplete: project.importStatus.complete });
-  if (validation.status === "blocked") {
-    const codes = [...new Set(validation.issues.map((issue) => issue.code))].join(", ");
+  // Default policy: publish the valid rows and skip rows with errors,
+  // recording exactly what was skipped. Only a catalog with nothing
+  // publishable is rejected; incomplete imports still block outright
+  // because missing data cannot be distinguished from invalid data.
+  const errorIndexes = new Set<number>();
+  for (const issue of validation.issues) {
+    if (issue.severity !== "error") continue;
+    for (const index of issue.rowIndexes) errorIndexes.add(index);
+  }
+  const skippedIndexes = [...errorIndexes].filter((index) => index >= 0 && index < project.products.length).sort((a, b) => a - b);
+  const skippedProductIds = skippedIndexes.map((index) => project.products[index]?.id || `(row ${index + 1})`);
+  const skippedCodes = [...new Set(validation.issues.filter((issue) => issue.severity === "error").map((issue) => issue.code))];
+  if (skippedIndexes.length >= project.products.length) {
     const attempt = failedAttempt(
       currentRevision,
       "VALIDATION_BLOCKED",
-      `The catalog has blocking issues (${validation.errorCount}): ${codes}. Fix them in the source or design, then publish again.`,
+      `Every product has blocking issues (${skippedCodes.join(", ")}). Fix them in the source or design, then publish again.`,
     );
     await persistFailure(id, attempt);
     return NextResponse.json({
@@ -100,14 +111,28 @@ export async function POST(req: NextRequest) {
       validation: { status: validation.status, errorCount: validation.errorCount, warningCount: validation.warningCount },
     }, { status: 422 });
   }
+  const publishable = project.products.filter((_, index) => !errorIndexes.has(index));
+  const snapshotValidation = skippedIndexes.length === 0
+    ? validation
+    : validateCatalog(publishable, { importComplete: project.importStatus.complete });
 
   const now = Date.now();
-  const snapshot = buildPublicationSnapshot(project, validation, now);
+  const snapshot = buildPublicationSnapshot(
+    { ...project, products: publishable },
+    snapshotValidation,
+    now,
+    { skippedProductIds, skippedCodes },
+  );
   const record: CatalogPublicationRecord = {
     schemaVersion: 1,
     projectId: id,
     active: snapshot,
-    lastAttempt: { status: "success", attemptedRevision: currentRevision, attemptedAt: now },
+    lastAttempt: {
+      status: "success",
+      attemptedRevision: currentRevision,
+      attemptedAt: now,
+      ...(skippedProductIds.length > 0 ? { skippedProductIds } : {}),
+    },
   };
   try {
     await savePublicationRecord(record);
@@ -134,7 +159,10 @@ export async function POST(req: NextRequest) {
     publishedAt: now,
     feedUrl: `/api/feed?projectId=${id}`,
     placements,
-    validation: { status: validation.status, errorCount: validation.errorCount, warningCount: validation.warningCount },
+    publishedRows: snapshot.products.length,
+    totalRows: project.products.length,
+    skipped: { productIds: skippedProductIds, codes: skippedCodes },
+    validation: { status: snapshotValidation.status, errorCount: snapshotValidation.errorCount, warningCount: snapshotValidation.warningCount },
     attempt: record.lastAttempt,
   });
 }

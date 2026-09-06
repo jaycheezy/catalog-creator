@@ -11,6 +11,8 @@ export function generateStaticParams() {
   return [...slices.map(slice => ({ slug: [slice.id] })), ...stories.map(story => ({ slug: [story.slice, story.slug] })), ...slices.map(slice => ({ slug: [slice.id, 'notes'] })), ...notes.map(note => ({ slug: [note.slice, 'notes', note.slug] }))];
 }
 export default async function SpecPage({ params }: { params: Promise<{ slug: string[] }> }) {
+  // Internal planning tool: served in local dev only, 404s in production builds.
+  if (process.env.NODE_ENV === 'production') notFound();
   const { slug } = await params;
   const slice = slices.find(item => item.id === slug[0]);
   if (!slice || slug.length > 3) notFound();

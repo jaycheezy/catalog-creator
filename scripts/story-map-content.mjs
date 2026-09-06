@@ -91,7 +91,7 @@ export function compileStoryMap(files) {
   for (const story of stories) visit(story.id);
   return { notes: notes.sort((a,b) => b.updated.localeCompare(a.updated) || a.id.localeCompare(b.id)), slices: slices.sort((a,b) => a.order-b.order || a.id.localeCompare(b.id)), stories: stories.sort((a,b) => a.order-b.order || a.id.localeCompare(b.id)) };
 }
-export function readStoryMap(root = process.cwd()) {
+export function readStoryMapFiles(root = process.cwd()) {
   const directory = path.join(root, 'docs/slices');
   const files = [];
   for (const slice of fs.readdirSync(directory, { withFileTypes: true })) {
@@ -110,7 +110,45 @@ export function readStoryMap(root = process.cwd()) {
       files.push({ path: relative, source: fs.readFileSync(path.join(root, relative), 'utf8') });
     }
   }
-  return compileStoryMap(files);
+  return files;
+}
+export function readStoryMap(root = process.cwd()) {
+  return compileStoryMap(readStoryMapFiles(root));
+}
+function setFrontmatterField(source, field, value) {
+  const lines = source.split('\n');
+  if (lines[0].trim() !== '---') throw new Error('YAML frontmatter is required');
+  const end = lines.findIndex((line, i) => i > 0 && line.trim() === '---');
+  if (end < 0) throw new Error('YAML frontmatter is required');
+  let found = false;
+  for (let i = 1; i < end; i++) {
+    if (new RegExp(`^${field}:`).test(lines[i])) { lines[i] = `${field}: "${value}"`; found = true; }
+  }
+  if (!found) throw new Error(`missing frontmatter field ${field}`);
+  return lines.join('\n');
+}
+export function applyStoryMove(files, move, context = {}) {
+  const { id, slice, step } = move;
+  const steps = context.steps ?? ['connect', 'validate', 'design', 'variants', 'feed', 'publish', 'test'];
+  const sliceIds = context.sliceIds ?? [...new Set(files.map(file => file.path.split('/')[2]).filter(Boolean))];
+  if (!steps.includes(step)) throw new Error(`unknown step ${step}`);
+  if (!sliceIds.includes(slice)) throw new Error(`unknown slice ${slice}`);
+  const index = files.findIndex(file => {
+    if (!/^docs\/slices\/[^/]+\/[^/]+\.md$/.test(file.path) || file.path.endsWith('/index.md') || file.path.endsWith('/notes.md')) return false;
+    try { return matter(file.source).data.id === id; } catch { return false; }
+  });
+  if (index < 0) throw new Error(`unknown story ${id}`);
+  const prevPath = files[index].path;
+  const current = matter(files[index].source).data;
+  if (current.slice === slice && current.step === step) return { files, path: prevPath, prevPath, changed: false };
+  const filename = prevPath.split('/').pop();
+  const nextPath = `docs/slices/${slice}/${filename}`;
+  if (files.some((file, i) => i !== index && file.path === nextPath)) throw new Error(`${nextPath} already exists`);
+  let source = setFrontmatterField(files[index].source, 'slice', slice);
+  source = setFrontmatterField(source, 'step', step);
+  const next = files.map((file, i) => i === index ? { path: nextPath, source } : file);
+  compileStoryMap(next);
+  return { files: next, path: nextPath, prevPath, changed: true };
 }
 export function generateStoryMap(root = process.cwd()) {
   const catalog = readStoryMap(root);

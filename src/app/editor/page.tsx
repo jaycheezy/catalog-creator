@@ -64,12 +64,13 @@ export default function EditorPage() {
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [publication, setPublication] = useState<{
-    active: { publishedAt: number; projectRevision: number } | null;
+    active: { publishedAt: number; projectRevision: number; publishedRows: number; skippedProductIds: string[] } | null;
     lastAttempt: {
       status: "success" | "failed";
       attemptedRevision: number;
       attemptedAt: number;
       error?: { message: string; code: string; retryable: boolean };
+      skippedProductIds?: string[];
     } | null;
   } | null | undefined>(undefined);
   const [projectRevision, setProjectRevision] = useState(0);
@@ -149,12 +150,13 @@ export default function EditorPage() {
           const json = await res.json() as CatalogProject & {
             error?: string;
             publication?: {
-              active: { publishedAt: number; projectRevision: number } | null;
+              active: { publishedAt: number; projectRevision: number; publishedRows: number; skippedProductIds: string[] } | null;
               lastAttempt: {
                 status: "success" | "failed";
                 attemptedRevision: number;
                 attemptedAt: number;
                 error?: { message: string; code: string; retryable: boolean };
+                skippedProductIds?: string[];
               } | null;
             } | null;
           };
@@ -653,6 +655,9 @@ export default function EditorPage() {
         projectRevision?: number;
         publishedAt?: number;
         feedUrl?: string;
+        publishedRows?: number;
+        totalRows?: number;
+        skipped?: { productIds: string[]; codes: string[] };
         attempt?: NonNullable<NonNullable<typeof publication>["lastAttempt"]>;
       };
       if (res.status === 401) {
@@ -666,11 +671,21 @@ export default function EditorPage() {
         setSaveError({ message: json.error || "Publish failed.", retryable: json.retryable !== false });
         return;
       }
+      const skippedIds = json.skipped?.productIds ?? [];
       setPublication({
-        active: { publishedAt: Number(json.publishedAt ?? Date.now()), projectRevision: Number(json.projectRevision ?? projectRevision) },
+        active: {
+          publishedAt: Number(json.publishedAt ?? Date.now()),
+          projectRevision: Number(json.projectRevision ?? projectRevision),
+          publishedRows: Number(json.publishedRows ?? 0),
+          skippedProductIds: skippedIds,
+        },
         lastAttempt: json.attempt ?? null,
       });
-      setSaveNotice(`Published revision ${Number(json.projectRevision ?? projectRevision)} — the feed URL is unchanged.`);
+      setSaveNotice(
+        skippedIds.length > 0
+          ? `Published revision ${Number(json.projectRevision ?? projectRevision)} (${Number(json.publishedRows ?? 0)} of ${Number(json.totalRows ?? 0)} products) — skipped invalid: ${skippedIds.join(", ")}. The feed URL is unchanged.`
+          : `Published revision ${Number(json.projectRevision ?? projectRevision)} — the feed URL is unchanged.`,
+      );
     } catch (e) {
       setSaveError({ message: e instanceof Error ? e.message : "Publish failed.", retryable: true });
     } finally {
@@ -782,7 +797,7 @@ export default function EditorPage() {
           <Link href="/" className="font-semibold tracking-tight">Catalog Forge</Link>
           <span className="text-zinc-300">/</span>
           <span className="text-sm font-medium">Editor (HTML)</span>
-          <a href="/story-map" className="ml-2 text-xs px-2 py-1 border rounded">Story Map</a>
+          {process.env.NODE_ENV !== 'production' && <a href="/story-map" className="ml-2 text-xs px-2 py-1 border rounded">Story Map</a>}
           <div className="ml-auto flex items-center gap-2">
             <div className="hidden sm:flex items-center gap-2 text-xs">
               <span className="text-zinc-500">{projectId ? "Source" : "Domain"}</span>
@@ -1090,6 +1105,15 @@ export default function EditorPage() {
                 Last publish failed: {publication.lastAttempt.error?.message ?? "unknown error"} The live feed was preserved.
               </div>
             )}
+            {(() => {
+              const ids = publication?.active?.skippedProductIds ?? [];
+              if (ids.length === 0) return null;
+              return (
+                <div className="text-[11px] text-amber-700">
+                  Live feed skips {ids.length} invalid product{ids.length === 1 ? "" : "s"}: {ids.join(", ")}. Fix them in the source and republish to include them.
+                </div>
+              );
+            })()}
             <div className="text-[11px] text-violet-700">Treat this URL like a private share link — project IDs are unguessable, no login needed for Meta. Publishing does not submit anything to Meta; import the URL as a catalog data source yourself.</div>
           </div>
         )
