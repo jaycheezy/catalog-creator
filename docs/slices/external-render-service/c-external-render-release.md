@@ -21,7 +21,8 @@ Exercise the complete published-feed workflow against the Netlify production dep
 ## Acceptance criteria
 
 - A published fixture feed returns HTTP 200 CSV with versioned image URLs, and at least one fresh image URL returns HTTP 200 PNG anonymously on the production domain.
-- The second request for the same image returns the same ETag/bytes and demonstrates an R2 cache hit with no re-rasterization (sub-second response).
+- Repeated image requests preserve ETag/bytes and demonstrate both CDN reuse and an origin R2 hit without re-rasterization. Record Cache-Status and Age alongside X-Render-Cache; a CDN can replay an original miss marker. Timing alone is not evidence of an R2 hit.
+- CDN cache isolation passes across products, projects, templates, placements, revisions and draft flags; feed query variants also return their own data. Effective Netlify-Vary includes all API query parameters, and pre-fix broad cache entries are invalidated.
 - A changed product or design produces a new image URL while the old immutable image remains retrievable.
 - R2 outage or invalid credentials produce a bounded retryable error and leave the prior cached asset and published feed unchanged.
 - Draft URLs remain private and unpublished project URLs do not expose draft data.
@@ -61,3 +62,5 @@ Report the final architecture, deployment identifiers, smoke results, cache evid
 - 2026-09-06 — Use the [complementary local proof and hosting corrections](notes/2026-09-06-native-next-local-benchmark.md) with the parallel spike proposal: native Next pixel parity passed locally; the Netlify buffered candidate uses a 4 MiB PNG cap and current credit-based pricing. Hosted cold starts, safe remote-image handling, actual Free Worker CPU and quota behavior remain separate gates. No readiness promotion follows from the local benchmark.
 
 - 2026-09-06 — Rescoped per the Netlify-hosting decision: release proof now targets the Netlify deployment with R2 on Cloudflare (no separate renderer deployment, no Worker CPU evidence). Credit consumption is explicit acceptance. Stays proposed until the cutover story is reviewed.
+
+- 2026-09-07 — Owner reports successful UI CSV export and the prior agent reports 31 published rows plus a matching R2 object. Independently verified production PNG correctness, CDN reuse and an origin R2 hit. Confirmed placement cache collision; release remains blocked on deploying the query-variation fix and completing the isolation matrix. This evidence does not establish draft safety, custom-domain cutover, outage recovery or billing usage. See [cache-isolation finding and deployment checks](notes/2026-09-07-netlify-cache-query-isolation.md).

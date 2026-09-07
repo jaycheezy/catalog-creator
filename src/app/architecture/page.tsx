@@ -7,107 +7,135 @@ export const metadata = {
     "Internal documentation: data flow, services, storage, auth, and how everything works in Catalog Forge.",
 };
 
-const FLOW_STEPS = [
+/* ---------------------------------- data ---------------------------------- */
+
+type Endpoint = { method: string; path: string };
+
+type FlowStep = {
+  n: string;
+  title: string;
+  subtitle: string;
+  body: string;
+  endpoints: Endpoint[];
+  files: string[];
+};
+
+const FLOW_STEPS: FlowStep[] = [
   {
     n: "1",
     title: "Import",
     subtitle: "Store · Feed URL · CSV",
-    body: "Store: fetchStoreCatalog tries Shopify /products.json, falls back to WooCommerce Store API. Feed URL: importRemoteFeed fetches CSV/XML with SSRF guard, 8 MB / 15 s limits. CSV: parsed client-side.",
-    files: ["src/lib/storeCatalog.ts", "src/lib/shopify.ts", "src/lib/woocommerce.ts", "src/lib/remoteFeed.ts", "src/lib/feedImport.ts"],
-    routes: ["GET /api/preview?domain=", "GET /api/feed-import?url="],
+    body: "Store imports try Shopify /products.json first, then fall back to the WooCommerce Store API. Feed URLs are fetched with SSRF guards and 8 MB / 15 s limits. CSVs are parsed client-side.",
+    endpoints: [
+      { method: "GET", path: "/api/preview?domain=" },
+      { method: "GET", path: "/api/feed-import?url=" },
+    ],
+    files: ["lib/storeCatalog.ts", "lib/shopify.ts", "lib/woocommerce.ts", "lib/remoteFeed.ts", "lib/feedImport.ts"],
   },
   {
     n: "2",
     title: "Normalize",
     subtitle: "→ FeedRow[]",
-    body: "Variant expansion into canonical FeedRow rows. Stable SKU-based id for the CSV export, immutable source_id for rendering. Prices formatted as “NN.NN CUR”, sale_price from compare-at, links upgraded to https, descriptions stripped to 5000 chars.",
-    files: ["src/lib/facebook.ts", "src/lib/platform.ts"],
-    routes: [],
+    body: "Variants expand into canonical FeedRow rows. A stable SKU-based id feeds the CSV export while an immutable source_id drives rendering. Prices become “NN.NN CUR”, sale_price derives from compare-at, links upgrade to https.",
+    endpoints: [],
+    files: ["lib/facebook.ts", "lib/platform.ts"],
   },
   {
     n: "3",
     title: "Validate",
     subtitle: "blocked · needs-review · ready",
-    body: "validateCatalog checks ids, titles, descriptions, brand, images, availability/condition values, price format, sale ordering, duplicate ids, and import completeness. Same result surfaces in preview UI, validator page, and X-Catalog-* feed headers.",
-    files: ["src/lib/catalogValidation.ts"],
-    routes: ["GET /api/preview", "GET /api/feed-import", "/validate"],
+    body: "validateCatalog checks ids, titles, descriptions, brand, images, availability and condition values, price format, sale ordering, duplicate ids, and import completeness. The same result feeds previews, the validator UI, and X-Catalog-* feed headers.",
+    endpoints: [
+      { method: "GET", path: "/api/preview" },
+      { method: "GET", path: "/api/feed-import" },
+    ],
+    files: ["lib/catalogValidation.ts"],
   },
   {
     n: "4",
     title: "Snapshot",
-    subtitle: "CatalogProject",
-    body: "POST /api/projects persists the full snapshot: source descriptor + normalized products + template + placement + validation + revision 1. Stored in R2 (catalog-projects/) or /tmp JSON locally. Unguessable prj_* id is the capability key.",
-    files: ["src/lib/catalogProject.ts", "src/lib/catalogProjectStore.ts"],
-    routes: ["POST /api/projects", "GET /api/projects?id=", "PATCH /api/projects"],
+    subtitle: "CatalogProject · revision 1",
+    body: "POST /api/projects persists the full snapshot — source descriptor, normalized products, template, placement, validation. Stored in R2 (catalog-projects/) or /tmp JSON locally. The unguessable prj_* id is the capability key.",
+    endpoints: [
+      { method: "POST", path: "/api/projects" },
+      { method: "GET", path: "/api/projects?id=" },
+      { method: "PATCH", path: "/api/projects" },
+    ],
+    files: ["lib/catalogProject.ts", "lib/catalogProjectStore.ts"],
   },
   {
     n: "5",
     title: "Design",
     subtitle: "Template editor",
-    body: "Layers (product-image / text / shape / badge) with {{bindings}} resolved per product. Per-size placementTemplates via adaptTemplateToSize. Saves use optimistic concurrency (expectedRevision → 409 on conflict); all placements validated before write.",
-    files: ["src/editor/types.ts", "src/editor/bindings.ts", "src/editor/autoLayout.ts", "src/editor/renderElement.tsx"],
-    routes: ["/editor", "PATCH /api/projects", "POST /api/templates"],
+    body: "Layers (product-image / text / shape / badge) resolve {{bindings}} per product. Per-size placementTemplates adapt via adaptTemplateToSize. Saves use optimistic concurrency — stale revisions get a 409.",
+    endpoints: [
+      { method: "PATCH", path: "/api/projects" },
+      { method: "POST", path: "/api/templates" },
+    ],
+    files: ["editor/types.ts", "editor/bindings.ts", "editor/autoLayout.ts", "editor/renderElement.tsx"],
   },
   {
     n: "6",
     title: "Publish",
     subtitle: "Frozen publication",
-    body: "POST /api/projects/publish deep-clones the draft into an immutable CatalogPublicationSnapshot. Error rows are skipped and recorded (skippedProductIds). Draft edits never leak into the live feed; failures preserve the previous active snapshot.",
-    files: ["src/lib/catalogPublication.ts", "src/lib/catalogPublicationStore.ts"],
-    routes: ["POST /api/projects/publish"],
+    body: "Publishing deep-clones the draft into an immutable CatalogPublicationSnapshot. Error rows are skipped and recorded. Draft edits never leak into the live feed, and failures preserve the previous active snapshot.",
+    endpoints: [{ method: "POST", path: "/api/projects/publish" }],
+    files: ["lib/catalogPublication.ts", "lib/catalogPublicationStore.ts"],
   },
   {
     n: "7",
     title: "Feed",
     subtitle: "Meta CSV",
-    body: "GET /api/feed?projectId= serves the frozen snapshot anonymously as Meta/Facebook CSV. Each image_link is rewritten to a versioned /api/render URL embedding productRevision + templateRevision + sizeId. Draft preview requires auth + ?draft=1.",
-    files: ["src/app/api/feed/route.ts", "src/lib/renderProduct.ts"],
-    routes: ["GET /api/feed"],
+    body: "GET /api/feed?projectId= serves the frozen snapshot anonymously as Meta CSV. Each image_link is rewritten to a versioned /api/render URL carrying productRevision + templateRevision + sizeId. Draft preview needs auth + ?draft=1.",
+    endpoints: [{ method: "GET", path: "/api/feed" }],
+    files: ["app/api/feed/route.ts", "lib/renderProduct.ts"],
   },
   {
     n: "8",
     title: "Render",
     subtitle: "Satori → PNG → R2",
-    body: "GET /api/render renders via Satori + resvg with bundled Inter fonts. On cache miss the PNG is written to RENDERS_BUCKET at renders/v2/… and served immutable (1 y). Stale revisions return 409; ?draft=1 bypasses cache and never touches R2.",
-    files: ["src/app/api/render/route.tsx", "src/lib/renderCache.ts", "src/lib/renderCacheStore.ts", "src/editor/fonts.ts", "src/editor/renderStyles.ts"],
-    routes: ["GET /api/render"],
+    body: "Renders via Satori + resvg with bundled Inter. Cache misses write to RENDERS_BUCKET at renders/v2/… and serve immutable for a year. Stale revisions return 409; ?draft=1 bypasses cache and never touches R2.",
+    endpoints: [{ method: "GET", path: "/api/render" }],
+    files: ["app/api/render/route.tsx", "lib/renderCache.ts", "lib/renderCacheStore.ts", "editor/fonts.ts"],
   },
   {
     n: "9",
     title: "Consume",
     subtitle: "Meta crawler",
-    body: "Meta fetches the public feed CSV, then fetches each versioned PNG server-to-server. No login; unguessable prj_*/tpl_* ids act as capability URLs.",
+    body: "Meta fetches the public feed CSV, then each versioned PNG server-to-server. No login — the unguessable prj_*/tpl_* ids act as capability URLs.",
+    endpoints: [],
     files: [],
-    routes: [],
   },
 ];
 
-const API_ROWS: { route: string; auth: string; what: string }[] = [
-  { route: "GET /api/preview?domain=", auth: "Login", what: "Live store import (Shopify → Woo fallback) + validation, first 50 rows. 30/min/IP, 5-min CDN cache." },
-  { route: "GET /api/feed-import?url=", auth: "Login", what: "Remote CSV/XML import (200-row preview) + validation. 15/min/IP." },
-  { route: "GET /api/feed", auth: "Public", what: "Meta CSV. ?domain= live, ?projectId= frozen publication (anonymous), ?draft=1 live draft (login)." },
-  { route: "GET /api/render", auth: "Public", what: "Versioned PNG renderer, R2-backed immutable cache. 60/min/IP." },
-  { route: "GET · POST · PATCH /api/projects", auth: "Login", what: "Project snapshot CRUD with revision-guarded writes." },
-  { route: "POST /api/projects/publish", auth: "Login", what: "Freeze draft → immutable publication snapshot." },
-  { route: "GET /api/templates?id= · POST", auth: "Mixed", what: "Legacy template store. Reads by id public, writes + listing need login." },
-  { route: "GET /api/brand?domain=", auth: "Public", what: "Brand kit via api.context.dev or heuristic fallback (favicon + hash hue). 24 h cache." },
-  { route: "GET · POST · DELETE /api/login", auth: "Public", what: "HMAC session cookie (30 d, HttpOnly/Lax). 10/min/IP." },
+type ApiRow = { method: string; path: string; auth: "Public" | "Login" | "Mixed"; what: string };
+
+const API_ROWS: ApiRow[] = [
+  { method: "GET", path: "/api/preview?domain=", auth: "Login", what: "Live store import (Shopify → Woo fallback) + validation, first 50 rows. 30/min/IP, 5-min CDN cache." },
+  { method: "GET", path: "/api/feed-import?url=", auth: "Login", what: "Remote CSV/XML import (200-row preview) + validation. 15/min/IP." },
+  { method: "GET", path: "/api/feed", auth: "Public", what: "Meta CSV. ?domain= live · ?projectId= frozen publication (anonymous) · ?draft=1 live draft (login)." },
+  { method: "GET", path: "/api/render", auth: "Public", what: "Versioned PNG renderer with R2-backed immutable cache. 60/min/IP." },
+  { method: "PATCH", path: "/api/projects", auth: "Login", what: "Project snapshot CRUD (GET · POST · PATCH) with revision-guarded writes." },
+  { method: "POST", path: "/api/projects/publish", auth: "Login", what: "Freeze draft → immutable publication snapshot." },
+  { method: "GET", path: "/api/templates?id=", auth: "Mixed", what: "Legacy template store. Reads by id are public; writes + listing need login." },
+  { method: "GET", path: "/api/brand?domain=", auth: "Public", what: "Brand kit via api.context.dev or heuristic fallback. 24 h cache." },
+  { method: "POST", path: "/api/login", auth: "Public", what: "HMAC session cookie (30 d, HttpOnly/Lax). 10/min/IP." },
 ];
 
-const PAGE_ROWS: { route: string; what: string }[] = [
-  { route: "/", what: "Landing + import (store / feed / CSV tabs), brand + template + placement picker, creates project." },
+const PAGE_ROWS = [
+  { route: "/", what: "Landing + import (store / feed / CSV), brand + template + placement picker, creates the project." },
   { route: "/editor", what: "Visual template editor: layers canvas, properties, AI-assist, all-sizes view, publish." },
   { route: "/validate", what: "Meta Feed Auditor: grouped issues, currency codes, affected product ids." },
-  { route: "/story-map", what: "Internal agile board generated from docs/slices Markdown (local dev only, 404s in production)." },
-  { route: "/architecture", what: "This page — internal data-flow and services documentation." },
+  { route: "/story-map", what: "Agile board generated from docs/slices Markdown (dev only)." },
+  { route: "/architecture", what: "This page — data flow and services reference (dev only)." },
   { route: "/login", what: "Password gate when ADMIN_PASSWORD is set." },
   { route: "/concepts", what: "Static design exploration (mock data only)." },
 ];
 
-const LIB_ROWS: { file: string; role: string }[] = [
+const LIB_ROWS = [
   { file: "lib/shopify.ts", role: "Shopify /products.json import (≤5000), currency via /cart.js" },
   { file: "lib/woocommerce.ts", role: "Woo Store API import (5×100), minor-units price conversion" },
-  { file: "lib/storeCatalog.ts", role: "Unified import: Shopify → Woo fallback, single source for feed/render parity" },
+  { file: "lib/storeCatalog.ts", role: "Unified import: Shopify → Woo fallback; single source for feed/render parity" },
   { file: "lib/platform.ts", role: "Platform detection + structured unsupported-platform help" },
   { file: "lib/facebook.ts", role: "FeedRow type, variant→row mapping, rowsToCsv" },
   { file: "lib/feedImport.ts · remoteFeed.ts", role: "CSV/XML parsing, SSRF guard, size/timeout limits" },
@@ -117,197 +145,385 @@ const LIB_ROWS: { file: string; role: string }[] = [
   { file: "lib/templateStore.ts", role: "Legacy template persistence" },
   { file: "lib/renderProduct.ts", role: "Render URL builder, exact product selection (404/409)" },
   { file: "lib/renderCache(.Store).ts", role: "Asset identity (SHA-256 revisions), immutable R2 keys" },
-  { file: "lib/r2Client.ts · durableStorage.ts", role: "Sole storage seam: S3-R2 → Cloudflare binding → local fallback; prod 503 without R2" },
+  { file: "lib/r2Client.ts · durableStorage.ts", role: "Sole storage seam: S3-R2 → binding → local fallback; prod 503 without R2" },
   { file: "lib/auth.ts · proxy.ts", role: "ADMIN_PASSWORD gate, HMAC session, rate limits, public-route allowlist" },
   { file: "lib/brand.ts · demoTemplates.ts", role: "Heuristic brand kit + starter templates" },
   { file: "editor/", role: "Template engine: types, bindings, Satori JSX, geometry, fonts, canvas UI" },
 ];
 
-function Section({ kicker, title, children }: { kicker: string; title: string; children: React.ReactNode }) {
+const NAV = [
+  { href: "#pipeline", label: "Pipeline" },
+  { href: "#api", label: "API reference" },
+  { href: "#pages", label: "Pages" },
+  { href: "#modules", label: "Modules" },
+  { href: "#infrastructure", label: "Infrastructure" },
+  { href: "#invariants", label: "Invariants" },
+];
+
+/* -------------------------------- components ------------------------------- */
+
+function MethodPill({ method }: { method: string }) {
+  const color =
+    method === "GET"
+      ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+      : method === "POST"
+        ? "bg-indigo-50 text-indigo-700 ring-indigo-200"
+        : method === "PATCH"
+          ? "bg-amber-50 text-amber-800 ring-amber-200"
+          : method === "DELETE"
+            ? "bg-rose-50 text-rose-700 ring-rose-200"
+            : "bg-slate-100 text-slate-600 ring-slate-200";
   return (
-    <section className="mt-12">
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-500">{kicker}</p>
-      <h2 className="mt-1 text-2xl font-semibold tracking-tight text-neutral-900">{title}</h2>
-      <div className="mt-4">{children}</div>
-    </section>
+    <span className={`inline-flex shrink-0 items-center rounded-md px-2 py-0.5 font-mono text-[11px] font-bold tracking-wide ring-1 ring-inset ${color}`}>
+      {method}
+    </span>
   );
 }
 
-function Table({ head, rows }: { head: string[]; rows: string[][] }) {
+function AuthPill({ auth }: { auth: ApiRow["auth"] }) {
+  const color =
+    auth === "Public"
+      ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20"
+      : auth === "Login"
+        ? "bg-amber-50 text-amber-800 ring-amber-600/20"
+        : "bg-slate-100 text-slate-600 ring-slate-500/20";
   return (
-    <div className="overflow-x-auto rounded-xl border border-neutral-200">
-      <table className="w-full min-w-[640px] border-collapse text-sm">
-        <thead>
-          <tr className="bg-neutral-50 text-left">
-            {head.map((h) => (
-              <th key={h} className="border-b border-neutral-200 px-4 py-2.5 font-semibold text-neutral-700">
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i} className={i % 2 ? "bg-neutral-50/50" : "bg-white"}>
-              {r.map((c, j) => (
-                <td key={j} className={`px-4 py-2.5 align-top ${j === 0 ? "font-mono text-[13px] font-medium text-neutral-900" : "text-neutral-600"}`}>
-                  {c}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset ${color}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${auth === "Public" ? "bg-emerald-500" : auth === "Login" ? "bg-amber-500" : "bg-slate-400"}`} />
+      {auth}
+    </span>
   );
 }
+
+function EndpointLine({ method, path }: Endpoint) {
+  return (
+    <span className="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-slate-100 py-1 pl-1.5 pr-2.5 ring-1 ring-inset ring-slate-900/5">
+      <MethodPill method={method} />
+      <code className="truncate font-mono text-xs text-slate-700">{path}</code>
+    </span>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" fill="none" aria-hidden>
+      <circle cx="8" cy="8" r="7" className="fill-emerald-50 stroke-emerald-200" strokeWidth="1" />
+      <path d="M5.5 8.2 7.2 10l3.3-3.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/* ----------------------------------- page ---------------------------------- */
 
 export default function ArchitecturePage() {
   if (process.env.NODE_ENV === "production") notFound();
+
   return (
-    <main className="mx-auto w-full max-w-5xl px-6 py-12 text-neutral-900">
-      <Link href="/" className="text-sm font-medium text-neutral-500 hover:text-neutral-900">
-        ← Catalog Forge
-      </Link>
-      <p className="mt-6 inline-block rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-amber-800">
-        Internal · team only
-      </p>
-      <h1 className="mt-3 text-4xl font-bold tracking-tight">How Catalog Forge works</h1>
-      <p className="mt-3 max-w-3xl text-lg leading-relaxed text-neutral-600">
-        Data flow, services, storage, and auth — one page that explains the whole system. Store catalogs come in,
-        get normalized and validated, are frozen into a project snapshot, designed against, published immutably,
-        and served to Meta as a feed of versioned render URLs.
-      </p>
-
-      {/* Flow diagram */}
-      <Section kicker="Data flow" title="The pipeline, end to end">
-        <ol className="relative space-y-4 before:absolute before:bottom-4 before:left-[27px] before:top-4 before:w-px before:bg-neutral-200">
-          {FLOW_STEPS.map((s) => (
-            <li key={s.n} className="relative flex gap-4">
-              <span className="z-10 flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-neutral-900 bg-neutral-900 text-xl font-bold text-white">
-                {s.n}
-              </span>
-              <div className="flex-1 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-                <div className="flex flex-wrap items-baseline gap-x-3">
-                  <h3 className="text-lg font-semibold">{s.title}</h3>
-                  <span className="text-sm font-medium text-neutral-500">{s.subtitle}</span>
-                </div>
-                <p className="mt-1.5 text-sm leading-relaxed text-neutral-600">{s.body}</p>
-                {s.routes.length > 0 && (
-                  <p className="mt-2 text-[13px] text-neutral-500">
-                    <span className="font-semibold text-neutral-700">Routes: </span>
-                    {s.routes.map((r) => (
-                      <code key={r} className="mr-1.5 rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-[12px]">
-                        {r}
-                      </code>
-                    ))}
-                  </p>
-                )}
-                {s.files.length > 0 && (
-                  <p className="mt-1.5 text-[13px] text-neutral-500">
-                    <span className="font-semibold text-neutral-700">Key files: </span>
-                    {s.files.map((f) => (
-                      <code key={f} className="mr-1.5 rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-[12px]">
-                        {f}
-                      </code>
-                    ))}
-                  </p>
-                )}
-              </div>
-            </li>
-          ))}
-        </ol>
-      </Section>
-
-      <Section kicker="Services" title="API routes">
-        <Table head={["Route", "Auth", "What it does"]} rows={API_ROWS.map((r) => [r.route, r.auth, r.what])} />
-      </Section>
-
-      <Section kicker="Services" title="Pages">
-        <Table head={["Route", "What it does"]} rows={PAGE_ROWS.map((r) => [r.route, r.what])} />
-      </Section>
-
-      <Section kicker="Codebase" title="Library & editor modules">
-        <Table head={["Module", "Responsibility"]} rows={LIB_ROWS.map((r) => [r.file, r.role])} />
-      </Section>
-
-      <Section kicker="Infrastructure" title="Storage, auth & environments">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-2xl border border-neutral-200 bg-white p-5">
-            <h3 className="font-semibold">Storage</h3>
-            <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-neutral-600">
-              <li>
-                <strong className="text-neutral-900">Production (Netlify):</strong> two R2 buckets reached over the
-                S3-compatible API — templates bucket (templates + projects + publications) and renders bucket
-                (immutable PNGs). Rasterization runs inside the serverless function (~1 s of a 10 s timeout).
-              </li>
-              <li>
-                <strong className="text-neutral-900">Local dev / tests:</strong> <code className="font-mono text-[12px]">/tmp/catalog-forge-*.json</code> file
-                fallbacks plus an in-memory render cache. Atomic tmp+rename writes.
-              </li>
-              <li>
-                Missing R2 binding in production returns a retryable <code className="font-mono text-[12px]">503</code> —
-                the app never silently writes to process memory or <code className="font-mono text-[12px]">/tmp</code> in
-                prod (override: <code className="font-mono text-[12px]">CATALOG_FORGE_ALLOW_LOCAL_STORAGE=true</code>).
-              </li>
-              <li>
-                Single storage seam: <code className="font-mono text-[12px]">lib/r2Client.ts</code> +{" "}
-                <code className="font-mono text-[12px]">lib/durableStorage.ts</code>. Cloudflare Worker path
-                (wrangler.jsonc + open-next) is the rollback target.
-              </li>
-            </ul>
+    <div className="min-h-screen bg-[#f6f9fc] text-slate-900 antialiased">
+      {/* Top bar */}
+      <header className="sticky top-0 z-30 border-b border-slate-900/10 bg-white/80 backdrop-blur-md">
+        <div className="mx-auto flex h-14 w-full max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
+          <div className="flex items-center gap-3">
+            <Link href="/" className="flex items-center gap-2 text-sm font-semibold text-slate-600 transition hover:text-slate-950">
+              <span aria-hidden>←</span> Catalog Forge
+            </Link>
+            <span className="hidden h-4 w-px bg-slate-200 sm:block" />
+            <span className="hidden text-sm text-slate-400 sm:block">Docs</span>
           </div>
-          <div className="rounded-2xl border border-neutral-200 bg-white p-5">
-            <h3 className="font-semibold">Auth & limits</h3>
-            <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-neutral-600">
-              <li>
-                One <code className="font-mono text-[12px]">ADMIN_PASSWORD</code> env var → HMAC session cookie
-                (30 days, HttpOnly/Lax). Unset means open dev mode.
-              </li>
-              <li>
-                <strong className="text-neutral-900">Login required:</strong> pages (except /login), project/template
-                writes, previews. <strong className="text-neutral-900">Public by design:</strong> /api/feed,
-                /api/render, template reads by id — Meta must reach them without login.
-              </li>
-              <li>Unguessable prj_*/tpl_* ids act as capability URLs.</li>
-              <li>Per-IP rate limits: preview/feed 30, feed-import 15, render 60, login 10 per minute.</li>
-            </ul>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-amber-800 ring-1 ring-inset ring-amber-600/20">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+              Internal · dev only
+            </span>
+            <Link
+              href="/story-map"
+              className="hidden rounded-lg bg-slate-950 px-3.5 py-1.5 text-sm font-semibold text-white transition hover:bg-slate-800 sm:block"
+            >
+              Story map
+            </Link>
           </div>
         </div>
-        <div className="mt-4 rounded-2xl border border-neutral-200 bg-white p-5">
-          <h3 className="font-semibold">External services</h3>
-          <p className="mt-2 text-sm leading-relaxed text-neutral-600">
-            Shopify storefronts (<code className="font-mono text-[12px]">/products.json</code>,{" "}
-            <code className="font-mono text-[12px]">/cart.js</code> for currency) · WooCommerce Store API (
-            <code className="font-mono text-[12px]">/wp-json/wc/store/v1</code>) · arbitrary feed URLs (Google
-            Shopping / Facebook CSV &amp; XML) · <code className="font-mono text-[12px]">api.context.dev</code> brand
-            enrichment (optional key, heuristic favicon fallback) · Meta crawler (feed + image consumer).
+      </header>
+
+      {/* Hero */}
+      <div className="relative overflow-hidden bg-slate-950 text-white">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(600px 320px at 15% -10%, rgba(99,91,255,0.55), transparent 60%), radial-gradient(500px 300px at 85% 0%, rgba(0,212,255,0.35), transparent 60%), radial-gradient(700px 400px at 50% 120%, rgba(99,91,255,0.25), transparent 60%)",
+          }}
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 opacity-[0.15]"
+          style={{
+            backgroundImage: "linear-gradient(rgba(255,255,255,0.35) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.35) 1px, transparent 1px)",
+            backgroundSize: "44px 44px",
+            maskImage: "radial-gradient(ellipse 80% 100% at 50% 0%, black 40%, transparent 100%)",
+          }}
+        />
+        <div className="relative mx-auto w-full max-w-7xl px-4 pb-12 pt-12 sm:px-6 sm:pt-16">
+          <p className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-indigo-300">Architecture · data flow</p>
+          <h1 className="mt-3 max-w-3xl text-4xl font-bold leading-[1.05] tracking-tight sm:text-5xl">
+            How Catalog Forge works
+          </h1>
+          <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-300 sm:text-lg">
+            Store catalogs come in, get normalized and validated, freeze into a project snapshot, get designed
+            against, publish immutably — and go out to Meta as a feed of versioned render URLs.
           </p>
         </div>
-      </Section>
+      </div>
 
-      <Section kicker="Correctness" title="Invariants to preserve">
-        <ul className="list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-neutral-600">
-          <li>Feed and render always resolve products through the same normalized snapshot (parity).</li>
-          <li>Anonymous feed reads serve only the frozen publication — never the live draft.</li>
-          <li>Render URLs are content-versioned (product + template revisions + size + renderer contract); cache is immutable.</li>
-          <li>Project writes are atomic and revision-guarded; stale editor revisions are rejected with 409.</li>
-          <li>Currency is never defaulted — missing codes stay validation errors.</li>
-          <li>Unknown explicit product ids return 404 and never fall back to a different variant.</li>
-        </ul>
-      </Section>
+      {/* Body */}
+      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6">
+        <div className="gap-10 py-10 lg:flex">
+          {/* Sidebar */}
+          <aside className="mb-8 shrink-0 lg:mb-0 lg:w-56">
+            <nav className="lg:sticky lg:top-20">
+              <p className="px-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">On this page</p>
+              <ul className="mt-2 space-y-0.5">
+                {NAV.map((item) => (
+                  <li key={item.href}>
+                    <a
+                      href={item.href}
+                      className="block rounded-lg px-3 py-1.5 text-sm font-medium text-slate-500 transition hover:bg-white hover:text-slate-950 hover:shadow-sm hover:ring-1 hover:ring-slate-900/5"
+                    >
+                      {item.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-6 rounded-xl border border-indigo-100 bg-indigo-50/60 p-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-indigo-900">New here?</p>
+                <p className="mt-1 text-[13px] leading-relaxed text-indigo-900/70">
+                  Follow the pipeline top to bottom — each step lists its endpoints and source files.
+                </p>
+              </div>
+            </nav>
+          </aside>
 
-      <footer className="mt-12 flex flex-wrap gap-4 border-t border-neutral-200 pt-6 text-sm">
-        <Link href="/story-map" className="font-medium text-neutral-700 hover:text-neutral-900">
-          Story map →
-        </Link>
-        <Link href="/validate" className="font-medium text-neutral-700 hover:text-neutral-900">
-          Feed validator →
-        </Link>
-        <Link href="/" className="font-medium text-neutral-700 hover:text-neutral-900">
-          Import →
-        </Link>
-      </footer>
-    </main>
+          {/* Main */}
+          <main className="min-w-0 flex-1">
+            {/* Pipeline */}
+            <section id="pipeline" className="scroll-mt-20">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">Data flow</p>
+              <h2 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">The pipeline, end to end</h2>
+              <ol className="relative mt-6 space-y-4 before:absolute before:bottom-6 before:left-[26px] before:top-6 before:w-0.5 before:bg-gradient-to-b before:from-indigo-300 before:via-indigo-200 before:to-cyan-200">
+                {FLOW_STEPS.map((s) => (
+                  <li key={s.n} className="relative flex gap-4">
+                    <span className="z-10 flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#635bff] to-[#3a2fd6] text-lg font-bold text-white shadow-lg shadow-indigo-600/25 ring-4 ring-[#f6f9fc]">
+                      {s.n}
+                    </span>
+                    <article className="min-w-0 flex-1 rounded-2xl border border-slate-900/[0.07] bg-white p-5 shadow-[0_1px_2px_rgba(16,24,40,0.05),0_8px_24px_-12px_rgba(16,24,40,0.12)] transition hover:shadow-[0_1px_2px_rgba(16,24,40,0.06),0_12px_32px_-12px_rgba(99,91,255,0.25)] sm:p-6">
+                      <div className="flex flex-wrap items-baseline gap-x-2.5">
+                        <h3 className="text-[17px] font-bold tracking-tight">{s.title}</h3>
+                        <span className="text-[13px] font-medium text-slate-400">{s.subtitle}</span>
+                      </div>
+                      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">{s.body}</p>
+                      {s.endpoints.length > 0 && (
+                        <div className="mt-3.5 flex flex-wrap gap-1.5">
+                          {s.endpoints.map((e) => (
+                            <EndpointLine key={e.method + e.path} method={e.method} path={e.path} />
+                          ))}
+                        </div>
+                      )}
+                      {s.files.length > 0 && (
+                        <div className="mt-2.5 flex flex-wrap gap-1.5">
+                          {s.files.map((f) => (
+                            <code key={f} className="rounded-md border border-slate-900/[0.06] bg-slate-50 px-1.5 py-0.5 font-mono text-[11.5px] text-slate-500">
+                              {f}
+                            </code>
+                          ))}
+                        </div>
+                      )}
+                    </article>
+                  </li>
+                ))}
+              </ol>
+            </section>
+
+            {/* API reference */}
+            <section id="api" className="mt-14 scroll-mt-20">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">Services</p>
+              <h2 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">API reference</h2>
+              <p className="mt-2 max-w-2xl text-[15px] text-slate-500">
+                Human writes need login; machine reads stay public so Meta can reach them without a session.
+              </p>
+              <div className="mt-5 overflow-hidden rounded-2xl border border-slate-900/[0.07] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.05),0_8px_24px_-12px_rgba(16,24,40,0.12)]">
+                <div className="hidden grid-cols-[220px_110px_1fr] gap-3 border-b border-slate-100 bg-slate-50/80 px-5 py-2.5 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400 md:grid">
+                  <span>Endpoint</span>
+                  <span>Access</span>
+                  <span>What it does</span>
+                </div>
+                <ul className="divide-y divide-slate-100">
+                  {API_ROWS.map((r) => (
+                    <li key={r.method + r.path} className="grid gap-2 px-5 py-3.5 transition hover:bg-indigo-50/40 md:grid-cols-[220px_110px_1fr] md:items-center md:gap-3">
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <MethodPill method={r.method} />
+                        <code className="truncate font-mono text-[13px] font-medium text-slate-800">{r.path}</code>
+                      </span>
+                      <span>
+                        <AuthPill auth={r.auth} />
+                      </span>
+                      <span className="text-sm leading-relaxed text-slate-600">{r.what}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </section>
+
+            {/* Pages */}
+            <section id="pages" className="mt-14 scroll-mt-20">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">Services</p>
+              <h2 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">Pages</h2>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                {PAGE_ROWS.map((p) => (
+                  <div
+                    key={p.route}
+                    className="group rounded-2xl border border-slate-900/[0.07] bg-white p-4 shadow-[0_1px_2px_rgba(16,24,40,0.05)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_32px_-12px_rgba(99,91,255,0.3)]"
+                  >
+                    <code className="inline-block rounded-lg bg-slate-950 px-2 py-1 font-mono text-xs font-semibold text-white">
+                      {p.route}
+                    </code>
+                    <p className="mt-2 text-sm leading-relaxed text-slate-600">{p.what}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {/* Modules */}
+            <section id="modules" className="mt-14 scroll-mt-20">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">Codebase</p>
+              <h2 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">Library & editor modules</h2>
+              <div className="mt-5 overflow-hidden rounded-2xl border border-slate-900/[0.07] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.05)]">
+                <ul className="divide-y divide-slate-100">
+                  {LIB_ROWS.map((m) => (
+                    <li key={m.file} className="flex flex-col gap-1 px-5 py-3 transition hover:bg-slate-50 sm:flex-row sm:items-baseline sm:gap-4">
+                      <code className="shrink-0 font-mono text-[13px] font-semibold text-indigo-700 sm:w-64">{m.file}</code>
+                      <span className="text-sm text-slate-600">{m.role}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </section>
+
+            {/* Infrastructure */}
+            <section id="infrastructure" className="mt-14 scroll-mt-20">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">Infrastructure</p>
+              <h2 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">Storage, auth & environments</h2>
+              <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                <div className="rounded-2xl border border-slate-900/[0.07] bg-white p-6 shadow-[0_1px_2px_rgba(16,24,40,0.05),0_8px_24px_-12px_rgba(16,24,40,0.12)]">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-md shadow-indigo-600/25">
+                    <svg viewBox="0 0 20 20" className="h-5 w-5 text-white" fill="none" aria-hidden>
+                      <ellipse cx="10" cy="5" rx="6" ry="2.5" stroke="currentColor" strokeWidth="1.6" />
+                      <path d="M4 5v10c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5V5" stroke="currentColor" strokeWidth="1.6" />
+                      <path d="M4 10c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5" stroke="currentColor" strokeWidth="1.6" />
+                    </svg>
+                  </div>
+                  <h3 className="mt-3 font-bold">Storage</h3>
+                  <ul className="mt-2 space-y-2.5 text-sm leading-relaxed text-slate-600">
+                    <li>
+                      <strong className="font-semibold text-slate-900">Production (Netlify):</strong> two R2 buckets
+                      over the S3-compatible API — a templates bucket (templates + projects + publications) and a
+                      renders bucket (immutable PNGs). Rasterization runs inside the serverless function.
+                    </li>
+                    <li>
+                      <strong className="font-semibold text-slate-900">Local dev / tests:</strong>{" "}
+                      <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-xs">/tmp/catalog-forge-*.json</code>{" "}
+                      fallbacks plus an in-memory render cache. Atomic tmp+rename writes.
+                    </li>
+                    <li>
+                      Missing R2 in production returns a retryable{" "}
+                      <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-xs">503</code> — never a silent
+                      local write.
+                    </li>
+                  </ul>
+                </div>
+                <div className="rounded-2xl border border-slate-900/[0.07] bg-white p-6 shadow-[0_1px_2px_rgba(16,24,40,0.05),0_8px_24px_-12px_rgba(16,24,40,0.12)]">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-md shadow-emerald-600/25">
+                    <svg viewBox="0 0 20 20" className="h-5 w-5 text-white" fill="none" aria-hidden>
+                      <rect x="4" y="8.5" width="12" height="8" rx="2" stroke="currentColor" strokeWidth="1.6" />
+                      <path d="M7 8.5V6.8a3 3 0 0 1 6 0v1.7" stroke="currentColor" strokeWidth="1.6" />
+                    </svg>
+                  </div>
+                  <h3 className="mt-3 font-bold">Auth & limits</h3>
+                  <ul className="mt-2 space-y-2.5 text-sm leading-relaxed text-slate-600">
+                    <li>
+                      One <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-xs">ADMIN_PASSWORD</code> →
+                      HMAC session cookie (30 d, HttpOnly/Lax). Unset means open dev mode.
+                    </li>
+                    <li>
+                      <strong className="font-semibold text-slate-900">Login required:</strong> pages, project/template
+                      writes, previews. <strong className="font-semibold text-slate-900">Public by design:</strong>{" "}
+                      /api/feed, /api/render, template reads by id.
+                    </li>
+                    <li>
+                      Unguessable <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-xs">prj_*/tpl_*</code>{" "}
+                      ids act as capability URLs. Per-IP limits: preview/feed 30, feed-import 15, render 60, login 10/min.
+                    </li>
+                  </ul>
+                </div>
+              </div>
+              <div className="mt-4 rounded-2xl border border-slate-900/[0.07] bg-white p-6 shadow-[0_1px_2px_rgba(16,24,40,0.05)]">
+                <h3 className="font-bold">External services</h3>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {["Shopify storefronts", "/products.json + /cart.js", "WooCommerce Store API", "Feed URLs (CSV/XML)", "api.context.dev", "Google favicon fallback", "Meta crawler"].map((s) => (
+                    <span key={s} className="rounded-full bg-slate-100 px-3 py-1 font-mono text-xs text-slate-600 ring-1 ring-inset ring-slate-900/5">
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            {/* Invariants */}
+            <section id="invariants" className="mt-14 scroll-mt-20">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">Correctness</p>
+              <h2 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">Invariants to preserve</h2>
+              <ul className="mt-5 space-y-2.5">
+                {[
+                  "Feed and render always resolve products through the same normalized snapshot (parity).",
+                  "Anonymous feed reads serve only the frozen publication — never the live draft.",
+                  "Render URLs are content-versioned (product + template revisions + size + renderer contract); cache is immutable.",
+                  "Project writes are atomic and revision-guarded; stale editor revisions are rejected with 409.",
+                  "Currency is never defaulted — missing codes stay validation errors.",
+                  "Unknown explicit product ids return 404 and never fall back to a different variant.",
+                ].map((t) => (
+                  <li
+                    key={t}
+                    className="flex items-start gap-2.5 rounded-xl border border-emerald-900/10 bg-emerald-50/50 px-4 py-3 text-sm leading-relaxed text-slate-700"
+                  >
+                    <CheckIcon />
+                    {t}
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            {/* Footer nav */}
+            <footer className="mt-14 grid gap-3 border-t border-slate-900/10 pt-6 sm:grid-cols-3">
+              {[
+                { href: "/story-map", k: "Internal", t: "Story map" },
+                { href: "/validate", k: "Tool", t: "Feed validator" },
+                { href: "/", k: "Start", t: "Import" },
+              ].map((l) => (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  className="group rounded-2xl border border-slate-900/[0.07] bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                >
+                  <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{l.k}</p>
+                  <p className="mt-0.5 font-semibold text-slate-900">
+                    {l.t} <span className="inline-block transition group-hover:translate-x-0.5">→</span>
+                  </p>
+                </Link>
+              ))}
+            </footer>
+          </main>
+        </div>
+      </div>
+    </div>
   );
 }

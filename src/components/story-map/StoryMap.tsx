@@ -4,7 +4,7 @@ import Link from 'next/link';
 import steps from '@/story-map/steps.json';
 import { isReady, statusLabels, storyUrl, sliceUrl, notesUrl, unmetDependencies, type Slice, type Story } from '@/story-map/model';
 
-const tones = { green: 'bg-green-50 border-green-200', blue: 'bg-blue-50 border-blue-200', violet: 'bg-violet-50 border-violet-200', amber: 'bg-amber-50 border-amber-200', zinc: 'bg-zinc-50 border-zinc-200' };
+const tones = { green: 'bg-emerald-50/70 border-emerald-100', blue: 'bg-sky-50/70 border-sky-100', violet: 'bg-indigo-50/70 border-indigo-100', amber: 'bg-amber-50/70 border-amber-100', zinc: 'bg-slate-100/70 border-slate-200' };
 function StoryValue({ story }: { story: Story }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -32,16 +32,16 @@ function StoryValue({ story }: { story: Story }) {
       aria-label={open ? `Hide why “${story.title}” matters` : `Show why “${story.title}” matters`}
       title="Why this matters"
       onClick={() => setOpen(value => !value)}
-      className="flex h-6 w-6 items-center justify-center rounded-full border border-zinc-300 bg-white text-xs font-semibold text-zinc-600 hover:border-violet-400 hover:text-violet-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600"
+      className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-300 bg-white text-xs font-semibold text-slate-500 transition hover:border-indigo-400 hover:text-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
     >
       <span aria-hidden="true" className="relative block h-3 w-3 leading-none">
         <span className={`absolute inset-0 flex items-center justify-center transition-all duration-200 ${open ? 'rotate-90 scale-75 opacity-0' : 'rotate-0 scale-100 opacity-100'}`}>i</span>
         <span className={`absolute inset-0 flex items-center justify-center transition-all duration-200 ${open ? 'rotate-0 scale-100 opacity-100' : '-rotate-90 scale-75 opacity-0'}`}>×</span>
       </span>
     </button>
-    {open && <div id={panelId} role="dialog" aria-label={`Why “${story.title}” matters`} className="absolute right-0 top-8 z-20 w-64 rounded-lg border border-zinc-200 bg-white p-3 text-left shadow-lg">
-      <p className="text-[11px] font-semibold uppercase tracking-widest text-violet-700">Why this matters</p>
-      <p className="mt-1.5 text-xs leading-relaxed text-zinc-700">{story.value}</p>
+    {open && <div id={panelId} role="dialog" aria-label={`Why “${story.title}” matters`} className="absolute right-0 top-8 z-20 w-64 rounded-xl border border-slate-200 bg-white p-3.5 text-left shadow-xl">
+      <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-indigo-700">Why this matters</p>
+      <p className="mt-1.5 text-xs leading-relaxed text-slate-600">{story.value}</p>
     </div>}
   </div>;
 }
@@ -76,7 +76,7 @@ export function StoryMap({ stories: initialStories, slices }: { stories: Story[]
   const shownSteps = steps.filter(item => step === 'all' || item.id === step);
   const shownSlices = slices.filter(item => sliceFilter === 'all' || item.id === sliceFilter);
   const visibleStories = stories.filter(item => (step === 'all' || item.step === step) && (sliceFilter === 'all' || item.slice === sliceFilter) && (!readyOnly || isReady(item, stories)));
-  const columns = { gridTemplateColumns: `190px repeat(${shownSteps.length}, minmax(220px, 1fr))` };
+  const columns = { gridTemplateColumns: `200px repeat(${shownSteps.length}, minmax(230px, 1fr))` };
   async function moveStory(storyId: string, sliceId: string, stepId: string) {
     const current = stories.find(item => item.id === storyId);
     if (!current || (current.slice === sliceId && current.step === stepId)) return;
@@ -117,31 +117,50 @@ export function StoryMap({ stories: initialStories, slices }: { stories: Story[]
     if (headerScrollRef.current) headerScrollRef.current.scrollLeft = 0;
     if (bodyScrollRef.current) bodyScrollRef.current.scrollLeft = 0;
   }, [step, sliceFilter, shownSteps.length]);
-  return <div className="min-h-screen bg-zinc-50 text-zinc-900">
-    <header className="sticky top-0 z-30 border-b bg-white"><div className="mx-auto flex max-w-[1800px] flex-wrap items-center gap-4 px-5 py-5">
-      <Link href="/" className="font-semibold">Catalog Forge</Link><span className="text-zinc-300">/</span><h1 className="font-medium">Story map</h1>
-      <Link className="ml-auto text-sm underline underline-offset-4" href="/editor">Open editor</Link>
+  const doneCount = stories.filter(s => s.status === 'done').length;
+  const readyCount = stories.filter(s => isReady(s, stories)).length;
+  return <div className="min-h-screen bg-[#f6f9fc] text-slate-900 antialiased">
+    <header className="sticky top-0 z-30 border-b border-slate-900/10 bg-white/80 backdrop-blur-md"><div className="mx-auto flex h-14 w-full max-w-[1800px] items-center gap-3 px-5">
+      <Link href="/" className="text-sm font-semibold text-slate-600 transition hover:text-slate-950"><span aria-hidden>←</span> Catalog Forge</Link><span className="h-4 w-px bg-slate-200" /><h1 className="text-sm font-semibold text-slate-950">Story map</h1>
+      <span className="hidden items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-amber-800 ring-1 ring-inset ring-amber-600/20 sm:inline-flex"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />Internal · dev only</span>
+      <Link className="ml-auto rounded-lg bg-slate-950 px-3.5 py-1.5 text-sm font-semibold text-white transition hover:bg-slate-800" href="/editor">Open editor</Link>
     </div></header>
+    <div className="relative overflow-hidden bg-slate-950 text-white">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(600px 280px at 15% -10%, rgba(99,91,255,0.55), transparent 60%), radial-gradient(500px 260px at 85% 0%, rgba(0,212,255,0.35), transparent 60%)",
+        }}
+      />
+      <div className="relative mx-auto flex w-full max-w-[1800px] flex-wrap items-end justify-between gap-4 px-5 pb-8 pt-8">
+        <div><p className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-indigo-300">Plan → specify → implement</p><h2 className="mt-2 text-3xl font-bold tracking-tight">Catalog delivery, one slice at a time</h2><p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-300">Explore the journey, open a story’s implementation spec, and hand a ready story to an agent. Shared scope and status come from the repository.</p></div>
+        <div className="flex gap-2.5">{[[doneCount, 'done'], [readyCount, 'ready to assign']].map(([v, l]) => <div key={l as string} className="flex items-center gap-2 rounded-xl bg-white/10 px-3.5 py-2 ring-1 ring-inset ring-white/15 backdrop-blur"><span className="text-lg font-bold tabular-nums">{v}</span><span className="text-[11px] font-medium uppercase tracking-wider text-slate-300">{l}</span></div>)}</div>
+      </div>
+    </div>
     <main className="mx-auto max-w-[1800px] space-y-5 p-5">
-      <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-widest text-violet-700">Plan → specify → implement</p><h2 className="mt-2 text-2xl font-semibold">Catalog delivery, one slice at a time</h2><p className="mt-2 max-w-3xl text-sm text-zinc-600">Explore the journey, open a story’s implementation spec, and hand a ready story to an agent. Shared scope and status come from the repository.</p></div><p className="text-sm text-zinc-600">{stories.filter(s => s.status === 'done').length} done · {stories.filter(s => isReady(s, stories)).length} ready to assign</p></div>
-      {legacy && <details className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm"><summary className="cursor-pointer font-medium">Previous browser map available</summary><p className="my-2 text-zinc-700">Local card edits no longer override the shared plan. Export them to reconcile any differences with the Markdown files.</p><button className="rounded border bg-white px-3 py-2 text-xs" onClick={() => {
+      {legacy && <details className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm shadow-sm"><summary className="cursor-pointer font-semibold text-amber-900">Previous browser map available</summary><p className="my-2 text-amber-800">Local card edits no longer override the shared plan. Export them to reconcile any differences with the Markdown files.</p><button className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 transition hover:bg-amber-100" onClick={() => {
         const url = URL.createObjectURL(new Blob([legacy], { type: 'application/json' }));
         const link = document.createElement('a'); link.href = url; link.download = 'previous-story-map.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
       }}>Export previous browser map</button></details>}
-      <div className="flex flex-wrap items-center gap-4 rounded-xl border bg-white p-3 text-sm">
-        <label className="flex items-center gap-2">Journey step<select value={step} onChange={e => setStep(e.target.value)} className="max-w-56 rounded border bg-white p-2"><option value="all">All steps</option>{steps.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></label>
-        <label className="flex items-center gap-2">Slice<select value={sliceFilter} onChange={e => setSliceFilter(e.target.value)} className="max-w-64 rounded border bg-white p-2"><option value="all">All slices</option>{slices.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></label>
-        <label className="flex items-center gap-2"><input type="checkbox" checked={readyOnly} onChange={e => setReadyOnly(e.target.checked)} />Ready to assign</label>
-        <button className="text-xs underline" onClick={() => { setStep('all'); setSliceFilter('all'); setReadyOnly(false); }}>Clear filters</button>
-        <span role="status" className="ml-auto text-xs text-zinc-500">{visibleStories.length} stories shown</span>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-3 rounded-2xl border border-slate-900/[0.07] bg-white p-4 text-sm shadow-[0_1px_2px_rgba(16,24,40,0.05)]">
+        <label className="flex items-center gap-2 font-medium text-slate-600">Journey step<select value={step} onChange={e => setStep(e.target.value)} className="max-w-56 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-800 shadow-sm transition focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"><option value="all">All steps</option>{steps.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></label>
+        <label className="flex items-center gap-2 font-medium text-slate-600">Slice<select value={sliceFilter} onChange={e => setSliceFilter(e.target.value)} className="max-w-64 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-800 shadow-sm transition focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"><option value="all">All slices</option>{slices.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></label>
+        <label className="flex cursor-pointer items-center gap-2 font-medium text-slate-600"><input type="checkbox" checked={readyOnly} onChange={e => setReadyOnly(e.target.checked)} className="h-4 w-4 rounded accent-indigo-600" />Ready to assign</label>
+        <button className="text-xs font-medium text-slate-400 underline underline-offset-4 transition hover:text-slate-700" onClick={() => { setStep('all'); setSliceFilter('all'); setReadyOnly(false); }}>Clear filters</button>
+        <span role="status" className="ml-auto rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">{visibleStories.length} stories shown</span>
       </div>
-      {notice && <div role={notice.kind === 'error' ? 'alert' : 'status'} className={`flex items-start justify-between gap-3 rounded-xl border p-3 text-sm ${notice.kind === 'error' ? 'border-red-200 bg-red-50 text-red-900' : 'border-green-200 bg-green-50 text-green-900'}`}><p>{notice.text}</p><button type="button" onClick={() => setNotice(null)} aria-label="Dismiss notice" className="rounded px-1 font-semibold leading-none hover:opacity-70">×</button></div>}
-      {!visibleStories.length ? <p className="rounded-xl border bg-white p-8 text-center text-zinc-600">No stories match these filters. Clear filters to see the full map.</p> : <div aria-label="Story map by slice and journey step">
-        <div ref={headerScrollRef} className="sticky top-[65px] z-20 overflow-x-hidden rounded-t-xl border border-b-0 bg-white">
-          <div className="grid" style={columns}><div className="sticky left-0 z-30 border-b border-r bg-white p-4 text-xs font-medium">Slices ↓ · Journey →</div>{shownSteps.map(s => <div key={s.id} className="border-b border-r bg-white p-4"><h3 className="text-sm font-semibold">{s.title}</h3><p className="mt-1 text-xs text-zinc-500">{s.subtitle}</p></div>)}</div>
+      {notice && <div role={notice.kind === 'error' ? 'alert' : 'status'} className={`flex items-start justify-between gap-3 rounded-2xl border p-4 text-sm shadow-sm ${notice.kind === 'error' ? 'border-rose-200 bg-rose-50 text-rose-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900'}`}><p>{notice.text}</p><button type="button" onClick={() => setNotice(null)} aria-label="Dismiss notice" className="rounded px-1 font-semibold leading-none hover:opacity-70">×</button></div>}
+      {!visibleStories.length ? <p className="rounded-2xl border border-slate-900/[0.07] bg-white p-10 text-center text-sm text-slate-500 shadow-sm">No stories match these filters. Clear filters to see the full map.</p> : <div aria-label="Story map by slice and journey step">
+        <div ref={headerScrollRef} className="sticky top-[57px] z-20 overflow-x-hidden rounded-t-2xl border border-b-0 border-slate-900/10 bg-white shadow-[0_1px_2px_rgba(16,24,40,0.05)]">
+          <div className="grid" style={columns}><div className="sticky left-0 z-30 border-b border-r border-slate-900/10 bg-slate-50 p-4 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">Slices ↓ · Journey →</div>{shownSteps.map(s => <div key={s.id} className="border-b border-r border-slate-900/10 bg-slate-50/80 p-4"><h3 className="text-sm font-bold tracking-tight text-slate-900">{s.title}</h3><p className="mt-0.5 text-xs text-slate-400">{s.subtitle}</p></div>)}</div>
         </div>
-        <div ref={bodyScrollRef} onScroll={syncHeaderScroll} className="overflow-x-auto rounded-b-xl border border-t-0 bg-white">
-        {shownSlices.map(slice => <div key={slice.id} className="grid" style={columns}><div className={`sticky left-0 z-10 border-b border-r p-4 ${tones[slice.tone]}`}><h3 className="text-sm font-semibold">{slice.title}</h3><p className="mt-2 text-xs text-zinc-600">{slice.description}</p><p className="my-3 text-xs">{stories.filter(s => s.slice === slice.id && s.status === 'done').length}/{stories.filter(s => s.slice === slice.id).length} done</p><Link href={sliceUrl(slice)} className="text-xs font-medium underline underline-offset-4">Read slice spec →</Link><Link href={notesUrl(slice)} className="mt-3 block text-xs font-medium underline underline-offset-4">Implementation notes →</Link></div>
+        <div ref={bodyScrollRef} onScroll={syncHeaderScroll} className="overflow-x-auto rounded-b-2xl border border-t-0 border-slate-900/10 bg-white shadow-[0_8px_24px_-12px_rgba(16,24,40,0.12)]">
+        {shownSlices.map(slice => <div key={slice.id} className="grid" style={columns}><div className={`sticky left-0 z-10 border-b border-r border-slate-900/10 p-4 ${tones[slice.tone]}`}>
+          <h3 className="text-sm font-bold tracking-tight text-slate-900">{slice.title}</h3><p className="mt-1.5 text-xs leading-relaxed text-slate-500">{slice.description}</p>
+          {(() => { const total = stories.filter(s => s.slice === slice.id).length; const done = stories.filter(s => s.slice === slice.id && s.status === 'done').length; const pct = total ? Math.round((done / total) * 100) : 0; return <div className="my-3"><div className="flex items-center justify-between text-[11px] font-semibold text-slate-500"><span>{done}/{total} done</span><span className="tabular-nums">{pct}%</span></div><div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-900/10"><div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-emerald-500 transition-all" style={{ width: `${pct}%` }} /></div></div>; })()}
+          <Link href={sliceUrl(slice)} className="text-xs font-semibold text-indigo-700 underline-offset-4 hover:text-indigo-900 hover:underline">Read slice spec →</Link><Link href={notesUrl(slice)} className="mt-2 block text-xs font-semibold text-indigo-700 underline-offset-4 hover:text-indigo-900 hover:underline">Implementation notes →</Link></div>
           {shownSteps.map(s => {
             const cellKey = `${slice.id}:${s.id}`;
             return <div
@@ -154,7 +173,7 @@ export function StoryMap({ stories: initialStories, slices }: { stories: Story[]
                 setOverCell(null);
                 if (id) void moveStory(id, slice.id, s.id);
               }}
-              className={`min-h-28 space-y-3 border-b border-r p-3 ${tones[slice.tone]} ${overCell === cellKey ? 'ring-2 ring-inset ring-violet-500' : ''}`}
+              className={`min-h-28 space-y-3 border-b border-r border-slate-900/[0.06] p-3 transition ${tones[slice.tone]} ${overCell === cellKey ? 'ring-2 ring-inset ring-indigo-500' : ''}`}
             >
             {visibleStories.filter(story => story.slice === slice.id && story.step === s.id).map(story => {
               const blocked = unmetDependencies(story, stories);
@@ -165,15 +184,15 @@ export function StoryMap({ stories: initialStories, slices }: { stories: Story[]
                 title="Drag to move to another column or slice"
                 onDragStart={event => { event.dataTransfer.setData('text/plain', story.id); event.dataTransfer.effectAllowed = 'move'; setDragId(story.id); }}
                 onDragEnd={() => { setDragId(null); setOverCell(null); }}
-                className={`relative cursor-grab rounded-lg border border-zinc-200 bg-white p-3 shadow-sm active:cursor-grabbing ${dragId === story.id ? 'opacity-50' : ''}`}
+                className={`relative scroll-mt-40 cursor-grab rounded-xl border border-slate-900/10 bg-white p-3.5 shadow-[0_1px_2px_rgba(16,24,40,0.06)] transition hover:-translate-y-px hover:shadow-[0_8px_20px_-8px_rgba(99,91,255,0.35)] active:cursor-grabbing ${dragId === story.id ? 'opacity-50' : ''}`}
               >
-                <div className="mb-2 flex items-start gap-2 text-[11px]"><span className={`rounded px-2 py-1 ${story.status === 'done' ? 'bg-green-100 text-green-800' : isReady(story, stories) ? 'bg-violet-100 text-violet-800' : 'bg-zinc-100 text-zinc-700'}`}>{statusLabels[story.status]}</span><span className="py-1 text-zinc-500">{story.effort}</span><StoryValue story={story} /></div>
-                <h4 className="text-sm font-semibold leading-snug">{story.title}</h4><p className="mt-2 text-xs leading-relaxed text-zinc-600">{story.description}</p>
-                {savingId === story.id && <p role="status" className="mt-2 text-[11px] font-medium text-violet-700">Saving move…</p>}
-                {story.acceptance.length > 0 && <details className="mt-3 text-xs"><summary className="cursor-pointer font-medium text-zinc-700">Acceptance criteria ({story.acceptance.length})</summary><ul className="mt-2 list-disc space-y-2 pl-4 text-zinc-600">{story.acceptance.map(a => <li key={a}>{a}</li>)}</ul></details>}
-                {story.implementation === 'outline' && <p className="mt-3 text-[11px] text-zinc-500">Spec outline · refine before assigning</p>}
-                {blocked.length > 0 && <div className="mt-3 border-t pt-2 text-xs text-amber-800"><p className="font-medium">Waiting on {blocked.length} {blocked.length === 1 ? 'story' : 'stories'}</p>{blocked.map(id => { const dependency = stories.find(item => item.id === id)!; return <Link key={id} href={storyUrl(dependency)} className="mt-1 block underline">{dependency.title}</Link>; })}</div>}
-                <Link href={storyUrl(story)} className="mt-4 inline-block text-xs font-semibold text-violet-800 underline underline-offset-4">View implementation spec →</Link>
+                <div className="mb-2 flex items-start gap-2 text-[11px]"><span className={`rounded-md px-2 py-1 font-semibold ring-1 ring-inset ${story.status === 'done' ? 'bg-emerald-50 text-emerald-700 ring-emerald-600/20' : isReady(story, stories) ? 'bg-indigo-50 text-indigo-700 ring-indigo-600/20' : 'bg-slate-100 text-slate-600 ring-slate-500/10'}`}>{statusLabels[story.status]}</span><span className="py-1 font-medium text-slate-400">{story.effort}</span><StoryValue story={story} /></div>
+                <h4 className="text-sm font-bold leading-snug tracking-tight text-slate-900">{story.title}</h4><p className="mt-1.5 text-xs leading-relaxed text-slate-500">{story.description}</p>
+                {savingId === story.id && <p role="status" className="mt-2 text-[11px] font-semibold text-indigo-600">Saving move…</p>}
+                {story.acceptance.length > 0 && <details className="mt-3 text-xs"><summary className="cursor-pointer font-semibold text-slate-600 hover:text-slate-900">Acceptance criteria ({story.acceptance.length})</summary><ul className="mt-2 list-disc space-y-1.5 pl-4 text-slate-500">{story.acceptance.map(a => <li key={a}>{a}</li>)}</ul></details>}
+                {story.implementation === 'outline' && <p className="mt-3 inline-block rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-500">Spec outline · refine before assigning</p>}
+                {blocked.length > 0 && <div className="mt-3 rounded-lg border border-amber-200/70 bg-amber-50 p-2.5 text-xs text-amber-800"><p className="font-semibold">Waiting on {blocked.length} {blocked.length === 1 ? 'story' : 'stories'}</p>{blocked.map(id => { const dependency = stories.find(item => item.id === id)!; return <Link key={id} href={storyUrl(dependency)} className="mt-1 block underline underline-offset-2 hover:text-amber-950">{dependency.title}</Link>; })}</div>}
+                <Link href={storyUrl(story)} className="mt-3.5 inline-block text-xs font-bold text-indigo-700 underline-offset-4 hover:text-indigo-900 hover:underline">View implementation spec →</Link>
               </article>;
             })}
             </div>;
@@ -181,7 +200,7 @@ export function StoryMap({ stories: initialStories, slices }: { stories: Story[]
         </div>)}
         </div>
       </div>}
-      <p className="text-xs text-zinc-500">Drag a card to another column or slice to move it — moves save to the story Markdown in local dev. Edit story Markdown directly to change anything else. Only your filters are stored in this browser.</p>
+      <p className="text-xs leading-relaxed text-slate-400">Drag a card to another column or slice to move it — moves save to the story Markdown in local dev. Edit story Markdown directly to change anything else. Only your filters are stored in this browser.</p>
     </main>
   </div>;
 }

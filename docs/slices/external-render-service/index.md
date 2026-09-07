@@ -1,7 +1,7 @@
 ---
 id: "external-render-service"
 title: "External Render Service — production PNGs on Netlify"
-description: "Host the Next app on Netlify free while feeds, storage, and DNS stay on Cloudflare; rasterization happens in-route"
+description: "Host the Next app on Netlify free while storage and DNS stay on Cloudflare; rasterization happens in-route"
 order: 5
 tone: "amber"
 ---
@@ -12,7 +12,7 @@ tone: "amber"
 
 A merchant can publish a catalog from the Netlify free deployment and Meta can fetch branded PNGs reliably. Netlify serves the application, feed, and image routes; Cloudflare keeps DNS, R2 buckets, and stored assets. No separate renderer service exists: the 10 s Netlify function timeout covers the measured ~1 s native `ImageResponse` renders.
 
-Example: a published Gibun project emits a versioned image URL. Meta requests it anonymously, the Netlify function validates the publication and revisions, renders on a cache miss, stores the PNG in `RENDERS_BUCKET` over the S3-compatible R2 API, and returns it. A repeat request is an R2 hit and does not re-rasterize.
+Example: a published Gibun project emits a versioned image URL. Meta requests it anonymously, the Netlify function validates the publication and revisions, renders on a cache miss, stores the PNG in `RENDERS_BUCKET` over the S3-compatible R2 API, and returns it. A repeat request can be served by Netlify’s CDN or, when it reaches the function, by R2 without re-rasterization.
 
 ## Scope
 
@@ -21,6 +21,8 @@ This slice owns the Netlify hosting decision, the R2 S3-compatibility seam, traf
 ## Current evidence
 
 The [Free-plan blocker](notes/2026-09-06-free-plan-renderer-blocker.md) records a deployed `exceededCpu` failure for Worker-side rasterization, which the hosting decision accepts as final for the Worker. The [spike PoC proposal](notes/2026-09-06-renderer-spike-poc.md) proves the native route unmodified on a production Node build (cold miss 545 ms, steady misses 89–435 ms, warm-hit p95 2.7 ms, exact PNG dimensions on all four placements, byte-identical refetches) and recommends Netlify Free as primary host with Cloud Run free as fallback. A Netlify-hosting decision by the owner superseded the separate-renderer direction; the old service/adapter split below is replaced by host, cutover, and release stories.
+
+Production follow-up on 2026-09-07 verified CDN reuse and an origin R2 hit, but found that Netlify ignores catalog query parameters and returns the square PNG for a portrait request. The [cache-isolation blocker](notes/2026-09-07-netlify-cache-query-isolation.md) records evidence, the local configuration fix, and required deployment checks. Hosting is in-progress; release and cutover remain blocked.
 
 ## Shared architecture and contracts
 
@@ -38,6 +40,8 @@ These are implementation constraints. Proposed file names below establish owners
 Rasterization runs inside the Netlify function that serves `/api/render`: measured steady misses of 89–435 ms sit an order of magnitude under the 10 s free function timeout. Keep every render input bounded as today (canonical four dimensions, 100-layer discipline, 8 MiB PNG ceiling, bounded product-image retrieval). Use the existing per-IP rate limiter as best-effort only; it is per-instance, not a global render-cost cap. R2 absorbs repeat Meta fetches so renderer traffic equals the catalog-change rate. Missing R2 configuration fails closed with the existing retryable 503s, never with silent local fallbacks in production.
 
 ### Public route and cache policy
+
+All API responses must use `Netlify-Vary: query` so catalog identity and draft flags participate in CDN cache keys. Preserve framework variations and route Cache-Control policies. Inspect effective deployed headers and invalidate old broad cache entries when introducing this configuration. Distinguish CDN hits (`Cache-Status`, `Age`) from origin R2 results (`X-Render-Cache`), which CDN hits can replay unchanged.
 
 | Path | Required behavior |
 | --- | --- |
@@ -63,7 +67,7 @@ An empty image URL preserves the existing deterministic missing-image block. A n
 3. `c-external-render-adapter` cuts traffic over, verifies the new host, and retires the Worker.
 4. `c-external-render-release` proves local, Netlify, cache-hit, failure, credit, and representative Meta-fetch behavior.
 
-Only the spike is reviewed so far; service, adapter and release stay proposed until their prerequisites are reviewed. Release proof depends on both implementation stories.
+Hosting implementation is in-progress with a production query-isolation blocker; adapter and release remain proposed until their prerequisites are reviewed. Release proof depends on both implementation stories.
 
 ## Release evidence
 

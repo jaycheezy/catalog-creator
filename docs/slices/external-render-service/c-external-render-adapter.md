@@ -59,3 +59,5 @@ Report DNS/domain changes, the Worker retirement action, verification evidence p
 - 2026-09-06 — Use the [complementary local proof and hosting corrections](notes/2026-09-06-native-next-local-benchmark.md) with the parallel spike proposal: native Next pixel parity passed locally; the Netlify buffered candidate uses a 4 MiB PNG cap and current credit-based pricing. Hosted cold starts, safe remote-image handling, actual Free Worker CPU and quota behavior remain separate gates. No readiness promotion follows from the local benchmark.
 
 - 2026-09-06 — Rescoped per the Netlify-hosting decision: no Worker adapter or renderer client exists anymore (in-route rasterization needs none), so this story now owns DNS cutover, verification, and Worker retirement instead. Stays proposed until the hosting story is reviewed.
+
+- 2026-09-07 — Before cutover/Worker retirement, require hosted API query-isolation proof and invalidation of the old broad CDN entries. The Netlify subdomain currently serves a square image for a portrait request. See [cache-isolation blocker](notes/2026-09-07-netlify-cache-query-isolation.md); successful single-image access is insufficient for cutover.
