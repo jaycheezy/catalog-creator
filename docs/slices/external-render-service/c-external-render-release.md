@@ -16,7 +16,7 @@ value: "Gives the merchant confidence that a published catalog feed and its bran
 
 ## Summary
 
-Exercise the complete published-feed workflow against the Netlify production deployment backed by Cloudflare R2, including first render, cache reuse, changed revisions, failure recovery, credit consumption, and an external anonymous fetch.
+Exercise the complete published-feed workflow against the Netlify production deployment backed by Cloudflare R2, including first render, cache reuse, changed revisions, failure recovery, usage consumption, and an external anonymous fetch.
 
 ## Acceptance criteria
 
@@ -26,7 +26,7 @@ Exercise the complete published-feed workflow against the Netlify production dep
 - A changed product or design produces a new image URL while the old immutable image remains retrievable.
 - R2 outage or invalid credentials produce a bounded retryable error and leave the prior cached asset and published feed unchanged.
 - Draft URLs remain private and unpublished project URLs do not expose draft data.
-- Netlify credit consumption for the release run is recorded and projected against the free allowance; no step requires a paid plan.
+- Netlify usage for the release run is recorded and projected against the actual Free Legacy allowances; no step requires a paid plan.
 - Production browser evidence shows the deployed app, feed controls, and a representative rendered result; all committed evidence redacts capability IDs, credentials, and private catalog data.
 
 ## Scope
@@ -43,7 +43,7 @@ Use the published snapshot and versioned URL contracts from the Reliable Catalog
 
 ## Interfaces
 
-Define the evidence bundle: deployment identifiers, feed status/headers, image status/content type/ETag/cache marker, R2 object evidence, outage response, Netlify credit consumption, and browser observations. Keep the runbook usable by a future maintainer without requiring access to secret values. The runbook must document Netlify log access, environment variable rotation, the credit dashboard to watch, and the Cloudflare R2 dashboard to watch.
+Define the evidence bundle: deployment identifiers, feed status/headers, image status/content type/ETag/cache marker, R2 object evidence, outage response, Netlify usage consumption, and browser observations. Keep the runbook usable by a future maintainer without requiring access to secret values. The runbook must document Netlify log access, environment variable rotation, the credit dashboard to watch, and the Cloudflare R2 dashboard to watch.
 
 ## Validation
 
@@ -53,7 +53,7 @@ Run `npm run story-map:check`, the application test/typecheck/lint/build command
 
 ## Completion handoff
 
-Report the final architecture, deployment identifiers, smoke results, cache evidence, credit consumption, remaining limitations, runbook location, and follow-up work. Move to `in-review`; mark the slice complete only after the release evidence is independently reviewable.
+Report the final architecture, deployment identifiers, smoke results, cache evidence, usage consumption, remaining limitations, runbook location, and follow-up work. Move to `in-review`; mark the slice complete only after the release evidence is independently reviewable.
 
 ## Progress
 
@@ -61,6 +61,10 @@ Report the final architecture, deployment identifiers, smoke results, cache evid
 
 - 2026-09-06 — Use the [complementary local proof and hosting corrections](notes/2026-09-06-native-next-local-benchmark.md) with the parallel spike proposal: native Next pixel parity passed locally; the Netlify buffered candidate uses a 4 MiB PNG cap and current credit-based pricing. Hosted cold starts, safe remote-image handling, actual Free Worker CPU and quota behavior remain separate gates. No readiness promotion follows from the local benchmark.
 
-- 2026-09-06 — Rescoped per the Netlify-hosting decision: release proof now targets the Netlify deployment with R2 on Cloudflare (no separate renderer deployment, no Worker CPU evidence). Credit consumption is explicit acceptance. Stays proposed until the cutover story is reviewed.
+- 2026-09-06 — Rescoped per the Netlify-hosting decision: release proof now targets the Netlify deployment with R2 on Cloudflare (no separate renderer deployment, no Worker CPU evidence). Actual-plan usage is explicit acceptance. Stays proposed until the cutover story is reviewed.
 
 - 2026-09-07 — Owner reports successful UI CSV export and the prior agent reports 31 published rows plus a matching R2 object. Independently verified production PNG correctness, CDN reuse and an origin R2 hit. Confirmed placement cache collision; release remains blocked on deploying the query-variation fix and completing the isolation matrix. This evidence does not establish draft safety, custom-domain cutover, outage recovery or billing usage. See [cache-isolation finding and deployment checks](notes/2026-09-07-netlify-cache-query-isolation.md).
+
+- 2026-09-07 — Owner-confirmed cache checks are complete; the query-isolation blocker is resolved. Added [release evidence ledger](../../research/external-render-service/release.md) and [operational runbook](../../research/external-render-service/runbook.md). Current production address is `cataloghog.netlify.app`; custom-domain work is deferred. Remaining release evidence is listed separately from the completed cache checks. Parallel task owns render/versioning implementation and Reliable Catalog story updates.
+
+- 2026-09-08 — Worker retirement and Netlify baseline checks complete; actual account is Free Legacy. The [retirement handoff](notes/2026-09-08-worker-retirement.md) records live deploy ID, PNG/hash/header evidence, team usage and conservative bandwidth/build projection. Hosted failure/recovery and release-specific usage delta are not claimed complete.

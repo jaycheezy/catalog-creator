@@ -3,7 +3,7 @@ id: "c-reliable-workflow-check"
 slice: "reliable-catalog"
 title: "Prove the complete non-demo catalog journey"
 step: "test"
-status: "proposed"
+status: "in-review"
 effort: "M"
 order: 18
 tags: ["next"]
@@ -17,6 +17,12 @@ value: "Tests the full journey from import to publish with real examples, so the
 ## Summary
 
 Exercise import → customize → validate → save → publish → reopen → update with representative catalogs and failure cases.
+
+## Progress
+
+- 2026-09-10 — Application-owned browser acceptance now passes against the compiled app in an isolated local-storage process. A 75-row CHF/sale CSV survived import, editor reopen, save-all, four fresh placement links, publication, reload, dirty-state publication blocking, save, and republish. Anonymous requests returned the stable 75-row feed and exact `1080×1080`, `1080×1350`, `1080×1920`, and `1200×628` PNGs with repeat ETag/byte stability. A visible title-color edit changed the immutable image URL, ETag, and pixels while the prior image stayed available; the inspected long-title/sale-badge PNG did not clip. Desktop and 390×844 controls were usable, and reload preserved source, design, saved state, and live revision. Results are redacted in the [local browser response artifact](../../research/evidence/reliable-catalog/local-browser-2026-09-10.md). The story moves to `in-review`; current Netlify cache/failure evidence remains owned by unfinished prerequisite `c-external-render-release`, and the manual Meta import remains an explicit external action.
+- 2026-09-10 — Earlier checkpoint: the full application gate passed after the first workflow hardening round (23 files / 152 tests, typecheck and lint without warnings, Next and OpenNext/Cloudflare builds, story-map validation, and clean diff whitespace). Automated coverage included all source types, representative XML/CSV problems, durable-save recovery, publication/reopen/update, exact variants, and four placements. The local desktop/narrow capture was temporarily unavailable after the repository wrapper hit `EMFILE` and a direct localhost launch could not be approved in that session; the later browser run above closes that evidence gap. Current Netlify failure/recovery evidence and the manual Meta result remain outstanding.
+- 2026-09-08 — Application-owned workflow consolidation started while `c-external-render-release` remains an explicit unfinished dependency. Added the [release evidence index](../../research/reliable-catalog-workflow.md) with separate automated, local-runtime, Netlify-baseline, browser, and Meta rows. Representative route fixtures now create and reopen Shopify, WooCommerce, remote CSV, and remote XML projects; the XML fixture covers entity decoding, a CHF sale, stable row identity, and an exact missing-image finding. Uploaded CSV coverage now proves a malformed decimal after row 50 survives normalization and reaches the shared `invalid-price` verdict. Resolved the open project/template mirror ambiguity: after the authoritative aggregate succeeds, a compatibility-mirror failure is logged without capability IDs and the client still receives the confirmed revision. Focused source/save regressions pass. Current hosted deployment and manual Meta acceptance do not yet include this working tree, so no production or external completion is claimed.
 
 ## Acceptance criteria
 

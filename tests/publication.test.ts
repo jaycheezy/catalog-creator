@@ -6,7 +6,7 @@ import { GET as feed } from "@/app/api/feed/route";
 import { GET as render } from "@/app/api/render/route";
 import { isAuthenticated } from "@/lib/auth";
 import { validateCatalog } from "@/lib/catalogValidation";
-import type { CatalogPublicationRecord } from "@/lib/catalogPublication";
+import { summarizeSource, type CatalogPublicationRecord } from "@/lib/catalogPublication";
 import { mapProductToRows } from "@/lib/facebook";
 import { parseFeedCsv } from "@/lib/feedImport";
 import { wooProductToRow } from "@/lib/woocommerce";
@@ -24,6 +24,7 @@ let record: CatalogPublicationRecord | null = null;
 let recordWriteError: Error | null = null;
 let recordReadError: Error | null = null;
 let projectReadError: Error | null = null;
+let activationConflictRevision: number | null = null;
 
 vi.mock("@/lib/auth", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/auth")>();
@@ -36,17 +37,35 @@ vi.mock("@/lib/catalogProjectStore", () => ({
     return draft;
   }),
 }));
-vi.mock("@/lib/catalogPublicationStore", () => ({
-  getPublicationRecord: vi.fn(async () => {
-    if (recordReadError) throw recordReadError;
-    if (recordWriteError) throw recordWriteError;
-    return record;
-  }),
-  savePublicationRecord: vi.fn(async (next: CatalogPublicationRecord) => {
-    if (recordWriteError) throw recordWriteError;
-    record = structuredClone(next);
-  }),
-}));
+vi.mock("@/lib/catalogPublicationStore", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/lib/catalogPublicationStore")>();
+  return {
+    ...original,
+    getPublicationRecord: vi.fn(async () => {
+      if (recordReadError) throw recordReadError;
+      if (recordWriteError) throw recordWriteError;
+      return record;
+    }),
+    savePublicationRecord: vi.fn(async (next: CatalogPublicationRecord) => {
+      if (recordWriteError) throw recordWriteError;
+      record = structuredClone(next);
+    }),
+    activatePublicationRecord: vi.fn(async (next: CatalogPublicationRecord) => {
+      if (recordWriteError) throw recordWriteError;
+      if (activationConflictRevision !== null) {
+        throw new original.PublicationWriteConflictError(activationConflictRevision);
+      }
+      if (record?.active && next.active && record.active.projectRevision >= next.active.projectRevision) return record;
+      record = structuredClone(next);
+      return record;
+    }),
+    recordPublicationFailure: vi.fn(async (id: string, attempt: NonNullable<CatalogPublicationRecord["lastAttempt"]>) => {
+      if (recordWriteError) throw recordWriteError;
+      record = { ...(record ?? { schemaVersion: 1, projectId: id, active: null, lastAttempt: null }), lastAttempt: structuredClone(attempt) };
+      return record;
+    }),
+  };
+});
 vi.mock("next/og", async () => {
   const { renderToStaticMarkup } = await import("react-dom/server");
   return {
@@ -90,6 +109,7 @@ beforeEach(() => {
   recordWriteError = null;
   recordReadError = null;
   projectReadError = null;
+  activationConflictRevision = null;
   clearRenderMemoryForTests();
   vi.mocked(isAuthenticated).mockResolvedValue(true);
 });
@@ -109,13 +129,33 @@ describe("project publication endpoint", () => {
     expect(record?.active?.products).toHaveLength(2);
   });
 
-  it("rejects unauthenticated and stale publish requests", async () => {
+  it("requires authentication and an exact saved project revision", async () => {
     vi.mocked(isAuthenticated).mockResolvedValue(false);
     expect((await publish(publishRequest({ id: projectId, expectedRevision: 3 }))).status).toBe(401);
     vi.mocked(isAuthenticated).mockResolvedValue(true);
+    const missing = await publish(publishRequest({ id: projectId }));
+    expect(missing.status).toBe(400);
+    expect(await missing.json()).toMatchObject({ code: "INVALID_EXPECTED_REVISION", retryable: false });
     const stale = await publish(publishRequest({ id: projectId, expectedRevision: 2 }));
     expect(stale.status).toBe(409);
     expect(await stale.json()).toMatchObject({ code: "REVISION_CONFLICT" });
+    expect(record).toBeNull();
+  });
+
+  it("rejects non-canonical saved placement output before activation", async () => {
+    draft = { ...validProject(), template: { ...template, sizeId: "banner", width: 900, revision: 2 } };
+    const response = await publish(publishRequest({ id: projectId, expectedRevision: 3 }));
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ code: "INVALID_TEMPLATE", retryable: false });
+    expect(record?.active).toBeNull();
+    expect(record?.lastAttempt).toMatchObject({ status: "failed", attemptedRevision: 3 });
+  });
+
+  it("does not let an older activation replace a concurrently published revision", async () => {
+    activationConflictRevision = 4;
+    const response = await publish(publishRequest({ id: projectId, expectedRevision: 3 }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "PUBLICATION_CONFLICT", revision: 4, retryable: false });
     expect(record).toBeNull();
   });
 
@@ -261,6 +301,18 @@ describe("project publication endpoint", () => {
     const unavailable = await projectGet(new NextRequest(`${app}/api/projects?id=${projectId}`));
     expect(unavailable.status).toBe(200);
     expect(await unavailable.json()).toMatchObject({ publication: null });
+  });
+});
+
+describe("publication source summary", () => {
+  it("does not copy remote-feed credentials into the frozen snapshot", () => {
+    expect(summarizeSource({
+      type: "feed-url",
+      value: "https://feeds.example/private/catalog.csv?token=top-secret#fragment",
+      format: "csv",
+    })).toEqual({ type: "feed-url", value: "https://feeds.example" });
+    expect(summarizeSource({ type: "csv", value: "/Users/alice/private/catalog.csv", format: "csv" }))
+      .toEqual({ type: "csv", value: "catalog.csv" });
   });
 });
 

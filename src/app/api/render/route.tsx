@@ -181,6 +181,67 @@ type VersionedRenderSource = {
 };
 
 /**
+ * A previously rendered public URL remains useful after a later publication
+ * removes its product or template. Its complete immutable identity is already
+ * present in the query, so only an exact cache hit may be served; a miss falls
+ * through to the current-snapshot error.
+ */
+async function readSupersededRender(query: VersionedRenderQuery): Promise<Response | null> {
+  if (
+    query.wantsDraft ||
+    !query.projectId ||
+    !query.templateId ||
+    !query.productId ||
+    !query.requestedProductRevision ||
+    !query.requestedTemplateRevision ||
+    !query.sizeId ||
+    !isSizePresetId(query.sizeId)
+  ) return null;
+
+  const preset = SIZE_PRESETS.find((candidate) => candidate.id === query.sizeId);
+  if (!preset) return null;
+  const descriptor = describeRenderAsset({
+    projectId: query.projectId,
+    productId: query.productId,
+    sizeId: query.sizeId,
+    productRevision: query.requestedProductRevision,
+    templateId: query.templateId,
+    templateRevision: Number(query.requestedTemplateRevision),
+    width: preset.width,
+    height: preset.height,
+  });
+
+  let cached;
+  try {
+    cached = await readRenderAsset(descriptor);
+  } catch (error) {
+    if (error instanceof DurableStorageError) {
+      return new Response(`Render storage unavailable: ${error.message} Retry the request.`, {
+        status: 503,
+        headers: { "Retry-After": "30" },
+      });
+    }
+    throw error;
+  }
+  if (cached.kind === "unavailable") {
+    return new Response("Render storage unavailable: the RENDERS_BUCKET binding is missing. Retry the request.", {
+      status: 503,
+      headers: { "Retry-After": "30" },
+    });
+  }
+  if (cached.kind !== "hit") return null;
+  return new Response(cached.bytes, {
+    status: 200,
+    headers: {
+      "Content-Type": "image/png",
+      ETag: cached.etag,
+      "Cache-Control": IMMUTABLE_CACHE_CONTROL,
+      "X-Render-Cache": "hit-stale",
+    },
+  });
+}
+
+/**
  * Serve one immutable project render asset. Validates the bounded query,
  * loads the chosen source once (draft for explicit owner previews, otherwise
  * the frozen publication snapshot — never upstream sources), verifies both
@@ -227,13 +288,19 @@ async function versionedProjectRender(query: VersionedRenderQuery): Promise<Resp
     };
   }
   const template = resolveProjectTemplate(source, query.templateId);
-  if (!template) return new Response(`Template does not belong to project: ${query.projectId}`, { status: 404 });
+  if (!template) {
+    const historical = await readSupersededRender(query);
+    if (historical) return historical;
+    return new Response(`Template does not belong to project: ${query.projectId}`, { status: 404 });
+  }
   const placementMismatch = template.sizeId !== query.sizeId;
 
   let product: FeedRow;
   try {
     product = selectRenderProduct(source.products, { productId: query.productId, handle: null });
   } catch (e) {
+    const historical = await readSupersededRender(query);
+    if (historical) return historical;
     if (e instanceof ProductSelectionError) return new Response(e.message, { status: e.status });
     return new Response(`Product not found: ${query.productId}`, { status: 404 });
   }
@@ -245,39 +312,8 @@ async function versionedProjectRender(query: VersionedRenderQuery): Promise<Resp
     // bytes: the R2 key is fully determined by the request, so a hit can
     // only ever return the exact immutable asset once issued. Anything else
     // is a dead link.
-    const historicalPreset = SIZE_PRESETS.find((preset) => preset.id === query.sizeId);
-    const superseded = describeRenderAsset({
-      projectId: source.projectId,
-      productId: query.productId,
-      sizeId: query.sizeId,
-      productRevision: query.requestedProductRevision,
-      templateId: template.id,
-      templateRevision: Number(query.requestedTemplateRevision),
-      // The current saved template may have moved to another size. Historical
-      // immutable URLs resolve their dimensions from the canonical preset.
-      width: historicalPreset?.width ?? template.width,
-      height: historicalPreset?.height ?? template.height,
-    });
-    // Draft bytes are private and must never enter or leave the persistent
-    // render cache, including on a stale-revision lookup.
-    if (!query.wantsDraft) {
-      try {
-        const cached = await readRenderAsset(superseded);
-        if (cached.kind === "hit") {
-          return new Response(cached.bytes, {
-            status: 200,
-            headers: {
-              "Content-Type": "image/png",
-              ETag: cached.etag,
-              "Cache-Control": IMMUTABLE_CACHE_CONTROL,
-              "X-Render-Cache": "hit-stale",
-            },
-          });
-        }
-      } catch {
-        // Fall through to the stale response below.
-      }
-    }
+    const historical = await readSupersededRender(query);
+    if (historical) return historical;
     if (placementMismatch) {
       return new Response(
         `Placement mismatch: template ${template.id} is ${template.sizeId}, requested ${query.sizeId}. Refresh the feed for the current link.`,
@@ -362,7 +398,7 @@ async function versionedProjectRender(query: VersionedRenderQuery): Promise<Resp
   try {
     await writeRenderAsset(descriptor, bytes, etag);
   } catch {
-    console.error(JSON.stringify({ event: "render_cache_write_failed", projectId: source.projectId, code: "RENDER_CACHE_WRITE_FAILED" }));
+    console.error(JSON.stringify({ event: "render_cache_write_failed", code: "RENDER_CACHE_WRITE_FAILED" }));
     // Serve the freshly rendered bytes with a short cache policy instead of
     // failing a correct render or claiming immutable caching.
     return new Response(bytes, {

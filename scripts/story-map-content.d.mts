@@ -19,3 +19,10 @@ export function readStoryMapFiles(root?: string): StoryMapFile[];
 export function readStoryMap(root?: string): StoryMapCatalog;
 export function generateStoryMap(root?: string): StoryMapCatalog;
 export function applyStoryMove(files: StoryMapFile[], move: StoryMove, context?: StoryMoveContext): StoryMoveResult;
+export type StoryStatusChange = { id: string; status: string };
+export type StoryStatusResult = {
+  files: StoryMapFile[];
+  path: string;
+  changed: boolean;
+};
+export function applyStoryStatus(files: StoryMapFile[], change: StoryStatusChange): StoryStatusResult;

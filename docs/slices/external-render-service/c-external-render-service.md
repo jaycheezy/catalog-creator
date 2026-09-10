@@ -3,7 +3,7 @@ id: "c-external-render-service"
 slice: "external-render-service"
 title: "Host the app on Netlify with R2 on Cloudflare"
 step: "design"
-status: "in-progress"
+status: "in-review"
 effort: "L"
 order: 2
 tags: ["netlify", "r2", "hosting"]
@@ -16,7 +16,7 @@ value: "Runs the whole catalog app, including branded image rendering, on Netlif
 
 ## Summary
 
-Deploy the existing Next.js app on Netlify and replace Cloudflare R2 binding access with an S3-compatible client, so rasterization happens in-route (10 s function timeout against ~1 s measured renders) and no separate renderer service is needed. R2 buckets, keys, versioned URLs, and the publication boundary stay exactly as specified by the Reliable Catalog slice.
+Deploy the existing Next.js app on Netlify and replace Cloudflare R2 binding access with an S3-compatible client, so rasterization happens in-route through the proven native ImageResponse path and no separate renderer service is needed. R2 buckets, keys, versioned URLs, and the publication boundary stay exactly as specified by the Reliable Catalog slice.
 
 ## Acceptance criteria
 
@@ -69,3 +69,5 @@ Report the Netlify site/project identifier without secrets, changed store/config
 - 2026-09-07 — Production smoke on the Netlify deployment (Gibun feed, 31 rows): feed CSV 200 with versioned links; render URL returns 200 with a valid 1080×1080 PNG, immutable headers, and quoted-key ETag; the PNG bytes landed in `catalog-forge-renders` under the exact expected key (verified with an R2 download of identical size). Initial interpretation (superseded by the cache-isolation finding below): repeat requests for the same URL report `X-Render-Cache: miss` with render-like latency instead of hitting the stored object, although the key derivation is byte-identical on both paths. Correctness is unaffected (deterministic bytes), but every fetch re-rasterizes until resolved. Owner diagnostics requested: Netlify function logs, env var names, R2 read/write metrics.
 
 - 2026-09-07 — Follow-up verified a Netlify durable hit replaying the original miss header and a fresh CDN variant reaching the R2-hit branch with identical bytes. The claim that every fetch re-rasterizes is withdrawn. Confirmed a different defect: changing size to 9:16 still returns the cached square because deployed Netlify-Vary excludes catalog query parameters. Added all-query variation for API routes in `next.config.ts`; status corrected to in-progress while the fix awaits deployment and hosted regression checks. See [cache-isolation blocker](notes/2026-09-07-netlify-cache-query-isolation.md).
+
+- 2026-09-07 — Owner confirms the deployment/cache checks are complete and asks to continue. Cache-isolation blocker resolved on that confirmation; hosting moved to in-review. This is owner-reported hosted validation, not a new replay of the matrix. Production remains `cataloghog.netlify.app`; custom-domain work is deferred. See [release handoff](../../research/external-render-service/release.md).

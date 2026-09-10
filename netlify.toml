@@ -1,6 +1,6 @@
 # Netlify production deployment (story c-external-render-service).
-# Next.js App Router API routes run as serverless functions (10 s default
-# timeout; measured renders need ~1 s). R2 stays on Cloudflare and is reached
+# Next.js App Router API routes run as serverless functions.
+# R2 stays on Cloudflare and is reached
 # over its S3-compatible API — no Cloudflare Worker build step here.
 [build]
   command = "npm run build"

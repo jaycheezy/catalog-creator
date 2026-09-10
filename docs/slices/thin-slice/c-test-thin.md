@@ -3,7 +3,7 @@ id: "c-test-thin"
 slice: "thin-slice"
 title: "Manual A/B via two feeds"
 step: "test"
-status: "proposed"
+status: "wont-do"
 effort: "S"
 order: 42
 tags: []

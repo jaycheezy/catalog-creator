@@ -29,6 +29,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { CatalogValidationResult } from "@/lib/catalogValidation";
 import { isTemplateSaved, templateFingerprint, type SavedTemplateRecord } from "@/editor/saveState";
+import { hasUnsavedPublicationDesign } from "@/editor/publicationState";
 import { WebmcpSpike } from "@/components/WebmcpSpike";
 
 const STORAGE_KEY = "catalog-forge-templates-v1";
@@ -88,6 +89,10 @@ export default function EditorPage() {
     ? placementFingerprint(active) === placementRecordForActive.fingerprint
     : false;
   const headerSaved = isSaved || placementSavedForActive;
+  const publishBlockedByUnsavedDesign = useMemo(
+    () => hasUnsavedPublicationDesign(master, templates, savedTemplates, savedPlacements),
+    [master, savedPlacements, savedTemplates, templates],
+  );
   const savedId = isSaved
     ? savedTemplate.templateId
     : placementSavedForActive && placementRecordForActive
@@ -639,7 +644,7 @@ export default function EditorPage() {
    * one on failure.
    */
   const publishProject = async () => {
-    if (!projectId) return;
+    if (!projectId || publishBlockedByUnsavedDesign) return;
     setPublishing(true);
     setSaveError(null);
     try {
@@ -1066,10 +1071,10 @@ export default function EditorPage() {
               )}
               <button
                 onClick={publishProject}
-                disabled={publishing}
+                disabled={publishing || publishBlockedByUnsavedDesign}
                 className="ml-auto text-xs px-3 py-1 bg-violet-600 text-white rounded disabled:opacity-50"
               >
-                {publishing ? "Publishing…" : publication?.active ? "Republish" : "Publish"}
+                {publishing ? "Publishing…" : publishBlockedByUnsavedDesign ? "Save changes first" : publication?.active ? "Republish" : "Publish"}
               </button>
             </div>
             {publication?.active ? (
@@ -1103,6 +1108,11 @@ export default function EditorPage() {
             {publication?.lastAttempt?.status === "failed" && (
               <div className="text-[11px] text-amber-700">
                 Last publish failed: {publication.lastAttempt.error?.message ?? "unknown error"} The live feed was preserved.
+              </div>
+            )}
+            {publishBlockedByUnsavedDesign && (
+              <div className="text-[11px] text-amber-700">
+                Save the master design and any open placement drafts before publishing, so the live feed matches what you reviewed.
               </div>
             )}
             {(() => {

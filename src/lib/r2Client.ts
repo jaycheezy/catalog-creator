@@ -16,17 +16,21 @@ import {
 export type StoreObject = {
   arrayBuffer(): Promise<ArrayBuffer>;
   text(): Promise<string>;
+  /** Adapter-native ETag, suitable for a later conditional write. */
+  etag?: string;
   customMetadata?: Record<string, string>;
 };
 
 export type StoreBucketPutOptions = {
   httpMetadata?: { contentType?: string };
   customMetadata?: Record<string, string>;
+  onlyIf?: { etagMatches?: string; etagDoesNotMatch?: string };
 };
 
 export type StoreBucket = {
   get(key: string): Promise<StoreObject | null>;
-  put(key: string, body: string | Uint8Array | ArrayBuffer, options?: StoreBucketPutOptions): Promise<void>;
+  /** False means a conditional write lost a race and stored nothing. */
+  put(key: string, body: string | Uint8Array | ArrayBuffer, options?: StoreBucketPutOptions): Promise<boolean>;
   list(prefix: string): Promise<string[]>;
 };
 
@@ -75,19 +79,33 @@ class S3StoreBucket implements StoreBucket {
     return {
       arrayBuffer: async () => copyBytes(bytes),
       text: async () => new TextDecoder().decode(bytes),
+      etag: response.ETag,
       // S3 normalizes user metadata keys to lowercase; our keys already are.
       customMetadata: response.Metadata ? { ...response.Metadata } : undefined,
     };
   }
 
-  async put(key: string, body: string | Uint8Array | ArrayBuffer, options?: StoreBucketPutOptions): Promise<void> {
-    await this.client.send(new PutObjectCommand({
-      Bucket: this.settings.bucket,
-      Key: key,
-      Body: typeof body === "string" ? body : new Uint8Array(body instanceof ArrayBuffer ? body : body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength)),
-      ContentType: options?.httpMetadata?.contentType,
-      Metadata: options?.customMetadata,
-    }));
+  async put(key: string, body: string | Uint8Array | ArrayBuffer, options?: StoreBucketPutOptions): Promise<boolean> {
+    try {
+      await this.client.send(new PutObjectCommand({
+        Bucket: this.settings.bucket,
+        Key: key,
+        Body: typeof body === "string" ? body : new Uint8Array(body instanceof ArrayBuffer ? body : body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength)),
+        ContentType: options?.httpMetadata?.contentType,
+        Metadata: options?.customMetadata,
+        IfMatch: options?.onlyIf?.etagMatches,
+        IfNoneMatch: options?.onlyIf?.etagDoesNotMatch,
+      }));
+      return true;
+    } catch (error) {
+      const failure = error as { name?: string; Code?: string; $metadata?: { httpStatusCode?: number } };
+      if (options?.onlyIf && (
+        failure.name === "PreconditionFailed" ||
+        failure.Code === "PreconditionFailed" ||
+        failure.$metadata?.httpStatusCode === 412
+      )) return false;
+      throw error;
+    }
   }
 
   async list(prefix: string): Promise<string[]> {
@@ -117,15 +135,20 @@ class R2StoreBucket implements StoreBucket {
     return {
       arrayBuffer: async () => copyBytes(new Uint8Array(await object.arrayBuffer())),
       text: async () => object.text(),
+      // Workers conditionals consume the unquoted `etag`; S3 keeps its own
+      // quoted representation. Callers only pass a token back to its adapter.
+      etag: object.etag,
       customMetadata: object.customMetadata ? { ...object.customMetadata } : undefined,
     };
   }
 
-  async put(key: string, body: string | Uint8Array | ArrayBuffer, options?: StoreBucketPutOptions): Promise<void> {
-    await this.bucket.put(key, body, {
+  async put(key: string, body: string | Uint8Array | ArrayBuffer, options?: StoreBucketPutOptions): Promise<boolean> {
+    const written = await this.bucket.put(key, body, {
+      onlyIf: options?.onlyIf,
       httpMetadata: options?.httpMetadata?.contentType ? { contentType: options.httpMetadata.contentType } : undefined,
       customMetadata: options?.customMetadata,
     });
+    return written !== null;
   }
 
   async list(prefix: string): Promise<string[]> {

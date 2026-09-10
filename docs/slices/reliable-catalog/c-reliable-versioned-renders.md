@@ -3,7 +3,7 @@ id: "c-reliable-versioned-renders"
 slice: "reliable-catalog"
 title: "Cache renders by product and template revision"
 step: "feed"
-status: "in-review"
+status: "done"
 effort: "L"
 order: 16
 tags: ["next"]
@@ -20,6 +20,7 @@ Use the configured render bucket and configure the OpenNext data cache. Product 
 
 ## Progress
 
+- 2026-09-07 — Completed after final review closed two immutable-identity gaps. `inventory` now participates in the product-content revision because generic bindings can render every normalized `FeedRow` field. An exact cached URL also remains available after a later publication removes its product or template; only a matching stored object is served, while a miss retains the current 404/409 behavior. Regression tests cover both cases. `npm run check` passes 21 files / 138 tests, typecheck, and lint with no warnings; `npm run cf:build` passes. An isolated OpenNext Worker run, built without `.env`, used Wrangler's local `TEMPLATES_BUCKET` and `RENDERS_BUCKET`: create/publish/feed returned 200, the 18,251-byte PNG went `miss` → `hit` with identical bytes/ETag and immutable caching, and remained an R2 `hit` after restarting the Worker. Bundled Wrangler 4.127.1 required a local-only compatibility-date override from `2026-09-05` to `2026-09-04`; the checked-in date still builds. The current production route is Netlify through the R2 S3 adapter; deployed cache and Worker-retirement evidence stays with `c-external-render-release`.
 - 2026-09-06 — Review fixes: added template identity to `renders/v2/` keys and ETags, added `assetVersion=2` to feed-issued images, preserved cached historical placement dimensions after master size changes, and bypassed all persistent caching for private drafts. Regression and local real-PNG evidence pass; `npm run check` passes 125 tests, typecheck, and lint with no warnings; both production builds pass. See [the shared review-fix decision](notes/2026-09-06-render-publication-review-fixes.md) for migration limits and evidence. Story stays `in-review`.
 - 2026-09-06 — Picked up with all dependencies `done`. New `src/lib/renderCache.ts`: canonical product-content snapshot (fixed field order, absent as `""`), SHA-256 `productRevision` (16 hex chars) via `crypto.subtle`, `RenderAssetDescriptor`, sanitized `renders/v1/<project>/<product>/<size>/<dims>-p<prev>-t<trev>-r1.png` keys, quoted ETags, immutable `Cache-Control`. `buildRenderUrl` gained an explicit versioned project target (`projectId`, `productId`, `sizeId`, `productRevision`, `templateRevision`); legacy targets byte-identical.
 - 2026-09-06 — New `src/lib/renderCacheStore.ts` with the specified hit/miss/unavailable/write-failure adapter result: R2 in production, process-local memory in dev/test, `DurableStorageError` otherwise. Fixed a real bug found by tests (destructuring shadow threw into the unavailable branch). `getRendersBucket` added beside the existing templates-bucket seam; `RENDERS_BUCKET` was already declared in `wrangler.jsonc` and typed in `worker-configuration.d.ts`.

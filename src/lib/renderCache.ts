@@ -21,8 +21,8 @@ export const PRODUCT_REVISION_LENGTH = 16;
 
 /**
  * Normalized `FeedRow` fields that can reach a binding or image output.
- * Every field here affects the PNG; fields outside this list (import
- * metadata, inventory notes) do not change the revision.
+ * Every normalized FeedRow field can be used by the renderer's generic
+ * binding fallback, so each one participates in the immutable identity.
  */
 const REVISION_FIELDS = [
   "id",
@@ -39,6 +39,7 @@ const REVISION_FIELDS = [
   "item_group_id",
   "google_product_category",
   "sale_price",
+  "inventory",
 ] as const;
 
 /** Canonical render-relevant snapshot: fixed key order, absent values as "". */

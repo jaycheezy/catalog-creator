@@ -8,7 +8,7 @@ tone: "blue"
 
 # Reliable Catalog — next slice
 
-Status: implementation in progress. Import, validation, source mapping, project handoff, durable saves, exact-product rendering, browser/server render parity, placement persistence, and repository quality gates are complete. Versioned assets, publication, and full workflow proof remain.
+Status: implementation in progress. Import, validation, source mapping, project handoff, durable saves, exact-product rendering, browser/server render parity, placement persistence, versioned assets, guarded publication, and repository quality gates are complete. The full workflow proof remains.
 
 ## Outcome
 
@@ -55,11 +55,9 @@ One R2 object must be authoritative for the active published snapshot so a parti
 
 ## Delivery order
 
-Completed foundations: `c-reliable-catalog-project`, `c-reliable-feed-import`, `c-reliable-full-validation`, `c-reliable-store-mapping`, `c-reliable-editor-handoff`, `c-reliable-durable-saves`, `c-reliable-variant-render`, `c-reliable-render-parity`, `c-reliable-placement-exports`, and `c-reliable-quality-gates`.
+Completed foundations: `c-reliable-catalog-project`, `c-reliable-feed-import`, `c-reliable-full-validation`, `c-reliable-store-mapping`, `c-reliable-editor-handoff`, `c-reliable-durable-saves`, `c-reliable-variant-render`, `c-reliable-render-parity`, `c-reliable-placement-exports`, `c-reliable-versioned-renders`, `c-reliable-publish-project`, and `c-reliable-quality-gates`.
 
-1. **Next:** `c-reliable-versioned-renders` owns product/template revision tokens, R2 asset storage, and immutable render URLs.
-2. **After versioned renders:** `c-reliable-publish-project` owns the draft/published boundary, stable feed activation, and publication status.
-3. **Release proof:** `c-reliable-workflow-check` exercises every supported source and the real Cloudflare/Meta path. It may fix integration defects but must not redesign earlier contracts silently.
+1. **Next:** `c-reliable-workflow-check` exercises every supported source and coordinates with `c-external-render-release` for deployed Netlify/R2 and Meta evidence. It may fix integration defects but must not redesign earlier contracts silently.
 
 Agents changing `CatalogProject`, render URL parameters, or publication storage must read every dependent spec and the slice notes first. Record cross-story changes as implementation notes and update the owning spec. Avoid parallel edits to `src/lib/catalogProject.ts`, `src/app/api/projects/route.ts`, and `src/app/editor/page.tsx` unless ownership is explicitly coordinated.
 

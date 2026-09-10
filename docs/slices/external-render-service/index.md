@@ -10,7 +10,7 @@ tone: "amber"
 
 ## Outcome
 
-A merchant can publish a catalog from the Netlify free deployment and Meta can fetch branded PNGs reliably. Netlify serves the application, feed, and image routes; Cloudflare keeps DNS, R2 buckets, and stored assets. No separate renderer service exists: the 10 s Netlify function timeout covers the measured ~1 s native `ImageResponse` renders.
+A merchant can publish a catalog from the Netlify free deployment and Meta can fetch branded PNGs reliably. Netlify serves the application, feed, and image routes; Cloudflare keeps DNS, R2 buckets, and stored assets. No separate renderer service exists; native ImageResponse rendering has been verified on Netlify.
 
 Example: a published Gibun project emits a versioned image URL. Meta requests it anonymously, the Netlify function validates the publication and revisions, renders on a cache miss, stores the PNG in `RENDERS_BUCKET` over the S3-compatible R2 API, and returns it. A repeat request can be served by Netlify’s CDN or, when it reaches the function, by R2 without re-rasterization.
 
@@ -22,7 +22,7 @@ This slice owns the Netlify hosting decision, the R2 S3-compatibility seam, traf
 
 The [Free-plan blocker](notes/2026-09-06-free-plan-renderer-blocker.md) records a deployed `exceededCpu` failure for Worker-side rasterization, which the hosting decision accepts as final for the Worker. The [spike PoC proposal](notes/2026-09-06-renderer-spike-poc.md) proves the native route unmodified on a production Node build (cold miss 545 ms, steady misses 89–435 ms, warm-hit p95 2.7 ms, exact PNG dimensions on all four placements, byte-identical refetches) and recommends Netlify Free as primary host with Cloud Run free as fallback. A Netlify-hosting decision by the owner superseded the separate-renderer direction; the old service/adapter split below is replaced by host, cutover, and release stories.
 
-Production follow-up on 2026-09-07 verified CDN reuse and an origin R2 hit, but found that Netlify ignores catalog query parameters and returns the square PNG for a portrait request. The [cache-isolation blocker](notes/2026-09-07-netlify-cache-query-isolation.md) records evidence, the local configuration fix, and required deployment checks. Hosting is in-progress; release and cutover remain blocked.
+Production follow-up on 2026-09-07 verified CDN reuse and an origin R2 hit, but found that Netlify ignores catalog query parameters and returns the square PNG for a portrait request. The [cache-isolation blocker](notes/2026-09-07-netlify-cache-query-isolation.md) records evidence, the local configuration fix, and required deployment checks. The owner subsequently confirmed the deployment/cache checks complete; that blocker is resolved and hosting is in-review. The selected production address remains `cataloghog.netlify.app`; custom-domain work is deferred.
 
 ## Shared architecture and contracts
 
@@ -32,12 +32,12 @@ These are implementation constraints. Proposed file names below establish owners
 | --- | --- |
 | Spike | Proved Node feasibility, dated costs, and the renderer parity/version policy in a decision note. Done as input; residual gates are deployment-side. |
 | Hosting | Netlify build/deploy configuration, isolated S3-compatible R2 seam, input validation, secret handling, and render smoke tests. Own a runtime-neutral store contract in the existing `src/lib` store modules; never import Cloudflare bindings or credentials outside that seam. |
-| Cutover | DNS/domain configuration, production verification on the new host, Worker retirement, and rollback documentation. Preserve the shared editor projection and all public URL semantics. |
+| Cutover | Keep the Netlify subdomain, inventory legacy consumers, retire the Worker, and document a verified Netlify rollback. Custom-domain work is deferred. Preserve the shared editor projection and all public URL semantics. |
 | Release | Sanitized evidence and operational runbook under `docs/research/external-render-service/`; verify the deployment and link the Reliable Catalog workflow proof. |
 
 ### Hosting and execution budgets
 
-Rasterization runs inside the Netlify function that serves `/api/render`: measured steady misses of 89–435 ms sit an order of magnitude under the 10 s free function timeout. Keep every render input bounded as today (canonical four dimensions, 100-layer discipline, 8 MiB PNG ceiling, bounded product-image retrieval). Use the existing per-IP rate limiter as best-effort only; it is per-instance, not a global render-cost cap. R2 absorbs repeat Meta fetches so renderer traffic equals the catalog-change rate. Missing R2 configuration fails closed with the existing retryable 503s, never with silent local fallbacks in production.
+Rasterization runs inside the Netlify function that serves `/api/render`. Local benchmarks are distinct from provider budgets. Canonical dimensions are enforced; PNG/input/retrieval bounds require verification against the actual implementation and must not be assumed from the spike. Use the existing per-IP rate limiter as best-effort only; it is per-instance, not a global render-cost cap. CDN and R2 reuse reduce repeated rasterization; misses, concurrency and failed storage can still cause additional work. Missing R2 configuration fails closed with the existing retryable 503s, never with silent local fallbacks in production.
 
 ### Public route and cache policy
 
@@ -67,10 +67,14 @@ An empty image URL preserves the existing deterministic missing-image block. A n
 3. `c-external-render-adapter` cuts traffic over, verifies the new host, and retires the Worker.
 4. `c-external-render-release` proves local, Netlify, cache-hit, failure, credit, and representative Meta-fetch behavior.
 
-Hosting implementation is in-progress with a production query-isolation blocker; adapter and release remain proposed until their prerequisites are reviewed. Release proof depends on both implementation stories.
+Hosting and completed retirement are in-review; final release evidence remains outstanding. See the [release handoff](../../research/external-render-service/release.md). Release proof depends on both implementation stories.
 
 ## Release evidence
 
-The slice is complete when a fresh versioned production render returns `200 image/png` on a cache miss, a repeat returns the same bytes and ETag from R2 without re-rasterization, uncached stale revisions still return `409` while already cached historical assets remain retrievable, R2/credential failures are actionable, Netlify credit consumption is recorded against the free allowance, and the published feed contains usable anonymous image URLs. Evidence must include Netlify deploy identifiers and function logs, R2 object evidence, and redacted response metadata.
+The slice is complete when a fresh versioned production render returns `200 image/png` on a cache miss, a repeat returns the same bytes and ETag from R2 without re-rasterization, uncached stale revisions still return `409` while already cached historical assets remain retrievable, R2/credential failures are actionable, Actual-plan Netlify usage is recorded against the free allowance, and the published feed contains usable anonymous image URLs. Evidence must include Netlify deploy identifiers and function logs, R2 object evidence, and redacted response metadata.
 
 The evidence must also show all three formerly Worker-inline raster paths rasterizing in-route on Netlify, bounded failure behavior, and timings for misses and hits at the recorded catalog size. A build alone is insufficient. Reuse this evidence from `c-reliable-workflow-check`; that story retains the four-source merchant journey and manual Meta import requirement.
+
+## September 8 handoff
+
+Publication review completed in the parallel task. The old Worker is now retired (public/preview URLs off, Git triggers removed), with R2 and code preserved. Retirement is in-review. Netlify deployment `6a9f0dd706a33b0008cf9f48` remains the verified baseline; earlier builds lack the cache fix. This account uses Free Legacy allowances, not credit pricing. See [retirement and usage evidence](notes/2026-09-08-worker-retirement.md). Final release recovery evidence remains outstanding.

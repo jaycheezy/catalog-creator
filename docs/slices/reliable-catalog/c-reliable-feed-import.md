@@ -30,6 +30,7 @@ Own CSV/TSV and supported product-feed XML parsing, header aliases, normalized p
 
 ## Progress
 
+- 2026-09-08 — Workflow follow-up added representative remote XML coverage and fixed two uncovered normalization gaps. Standard named and numeric XML entities now decode in text, IDs, brands, and links. Locale price normalization validates the whole separator structure before conversion, so malformed values such as `12.34.56 EUR` and `17,90,00 EUR` remain invalid for the shared validator instead of being silently truncated by `parseFloat`. The fixture also preserves a CHF regular/sale pair and identifies the exact missing-image row.
 Implemented: quoted multiline records, escaped quotes, BOM/CSV/TSV parsing, locale-aware separators, prefix or suffix ISO currency codes, regular and sale price preservation, stable source IDs, bounded streaming reads, redirect validation, and row-level findings from the shared validator. Missing currencies remain explicit and block readiness.
 
 ## Implementation guidance

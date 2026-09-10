@@ -3,7 +3,7 @@ id: "c-reliable-publish-project"
 slice: "reliable-catalog"
 title: "Publish and reopen the correct project feed"
 step: "publish"
-status: "in-review"
+status: "done"
 effort: "M"
 order: 17
 tags: ["next"]
@@ -20,6 +20,7 @@ Make the feed URL a durable project output that can be reopened and updated afte
 
 ## Progress
 
+- 2026-09-08 — Completed after final review closed the publication race and draft-safety gaps. Publish now requires an exact `expectedRevision`, rejects noncanonical or incomplete placement templates, and refuses to publish while the editor has unsaved master or placement drafts. Source summaries retain only a CSV basename or remote origin, so signed query parameters, credentials, and local paths never enter the frozen record. Publication activation and failure recording use conditional R2/S3 writes with bounded retries: an older success or failed attempt cannot replace a newer active snapshot or erase newer attempt history, while a duplicate publish of the same revision is idempotent. Capability project IDs were removed from storage-error logs. New storage, route, adapter, source-sanitization, and editor-state regressions pass. `npm run check` is green (23 files / 149 tests, typecheck, 0 lint warnings), and the OpenNext/Cloudflare build passes. An isolated Workerd run against persisted local R2 proved missing-revision rejection, two concurrent same-revision publishes returning the same activation time, reopen at revision 1, anonymous feed access, and identical PNG bytes across `miss` → `hit`. Netlify is the current production route through the R2 S3 adapter; deployed evidence remains with `c-external-render-release`, and the supported-source/Meta proof remains with `c-reliable-workflow-check`.
 - 2026-09-06 — Publish-valid-rows policy adopted: the endpoint publishes rows without errors and skips error rows with recorded IDs/codes (re-validated subset verdict frozen in the snapshot); only incomplete imports, empty catalogs, and fully-invalid catalogs 422. Blocking-failure messages now name error-severity codes only (warnings/info excluded). Snapshot, attempt, summary, publish response, and editor publish bar all carry skipped rows with an amber live-feed notice and reopen-safe counts. Slice contract updated to match. Story stays `in-review` pending review.
 
 - 2026-09-06 — Review fixes: draft CSVs now emit authenticated draft image targets, all `draft=1` responses are `private, no-store`, publication project-read failures return retryable 503 JSON, and absent publication records return `{ active: null, lastAttempt: null }` while storage failures retain unavailable status. The shared render fixes prevent draft cache exposure and preserve cached images after a placement change. All 125 tests, typecheck, lint, both production builds, and an isolated local real-PNG publication run pass. See [the shared review-fix decision](notes/2026-09-06-render-publication-review-fixes.md). Story stays `in-review`.

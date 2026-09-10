@@ -1,9 +1,9 @@
 ---
 id: "c-external-render-adapter"
 slice: "external-render-service"
-title: "Cut traffic over to Netlify and retire the Worker"
+title: "Confirm Netlify traffic and retire the Worker"
 step: "feed"
-status: "proposed"
+status: "in-review"
 effort: "M"
 order: 3
 tags: ["netlify", "dns", "cutover"]
@@ -12,37 +12,37 @@ implementation: "specified"
 value: "Moves merchants and Meta to the Netlify deployment without breaking saved feed URLs, then retires the Cloudflare Worker so only one production app exists."
 ---
 
-# Cut traffic over to Netlify and retire the Worker
+# Confirm Netlify traffic and retire the Worker
 
 ## Summary
 
-Point the production domain at the Netlify deployment, verify Meta-facing feed and image URLs work anonymously, and retire the Cloudflare Worker deployment so R2 and DNS are the only remaining Cloudflare responsibilities. No data migration: both deployments address the same R2 buckets and keys.
+Use `cataloghog.netlify.app` as the owner-selected production address, verify that merchant and feed consumers use it, and retire the Cloudflare Worker only after legacy consumers and a viable rollback are accounted for. Custom-domain attachment and DNS cutover are deferred. No data migration: both deployments address the same R2 buckets and keys.
 
 ## Acceptance criteria
 
-- The production domain serves the app from Netlify with valid SSL; anonymous feed and versioned image URLs return the same bytes and headers as the verified deploy preview.
+- `cataloghog.netlify.app` serves the app over HTTPS and is the documented production address; anonymous feed and versioned image URLs preserve the verified behavior. No custom domain or DNS change is required for this release.
 - Previously shared capability feed URLs keep working when they address unchanged R2 assets; any URL that cannot be honored fails with the existing stable 404/409/503 semantics, never a silent wrong feed.
 - The Cloudflare Worker deployment is retired or neutered (no competing production app), with the decision and rollback recorded; R2 buckets, keys, and stored assets are untouched.
 - Rate-limit, validation, publication-boundary, and draft-isolation behavior is unchanged from the Reliable Catalog contracts.
-- Rollback (re-point DNS to the previous deployment) is documented and was reasoned through before cutover, including R2 compatibility in both directions.
+- Rollback uses a verified prior Netlify deployment with query isolation and compatible R2 keys. The Free Worker that failed raster CPU limits is not a proven full-service rollback.
 
 ## Scope
 
-Own DNS/domain configuration, the cutover checklist and verification, Worker retirement, and rollback documentation. Exclude renderer implementation (rasterization is in-route), changing the publication/versioning model, bulk pre-rendering, and any Cloudflare plan upgrade.
+Own production-address documentation, legacy consumer inventory, Worker retirement, and rollback documentation. Custom-domain/DNS work is deferred by the owner. Exclude renderer implementation (rasterization is in-route), changing the publication/versioning model, bulk pre-rendering, and any Cloudflare plan upgrade.
 
 ## Implementation guidance
 
-Implement after the hosting story is reviewed. Keep Cloudflare DNS authoritative; decide explicitly between proxying through Cloudflare's CDN (keeps edge caching, firewall, and analytics in front of Netlify) versus direct DNS to Netlify, and record the choice with reasons. Either way the origin of truth for product data and image bytes stays the same R2 buckets.
+Implement retirement after the hosting and publication/versioning prerequisites are reviewed. Keep the current Netlify subdomain; no DNS/proxy choice is needed now. Inventory the Worker’s deployed routes, workers.dev and preview access, and consumers of its saved feed URLs before disabling access. Repository wrangler configuration alone is not proof of live routes or traffic.
 
-Cut over in order: deploy preview green, custom domain attached with SSL, anonymous feed CSV plus one miss and one hit image per placement verified on the production domain, editor publish/republish round-trip verified, then Worker retirement, then a final anonymous re-verification. Retire by removing the Worker deployment or its route triggers (not by deleting R2 buckets or DNS records); keep the `wrangler.jsonc` and deployment files in the repository for the R2/DNS side and for a possible rollback.
+Proceed in order: reviewed Netlify deployment and owner-confirmed cache checks, inventory legacy feed consumers and migrate any active ones, confirm a viable Netlify rollback deployment, then Worker retirement and final anonymous verification. Retire by removing the Worker deployment or its route triggers (not by deleting R2 buckets or DNS records); keep the `wrangler.jsonc` and deployment files in the repository for the R2/DNS side and for a possible rollback.
 
 Read the hosting story handoff for site identifiers and assumptions, `src/app/api/feed/route.ts`, `src/app/api/render/route.tsx`, and the publication/versioning contracts. Preserve exact product selection and revision checks; the cutover must not change request/response semantics, only where they are served from.
 
 ## Interfaces
 
-- Public URLs keep their shapes; only the hostname changes. Capability IDs remain unguessable share links; no credentials appear in URLs.
+- Public URLs keep their shapes and the selected Netlify hostname. Existing Worker-hostname consumers require explicit inventory and migration. Capability IDs remain unguessable share links; no credentials appear in URLs.
 - R2 bucket names, object keys, ETags, and cache headers are identical on both sides of the cutover because both deployments address the same buckets.
-- The rollback target is the previous deployment plus the same R2 state; no data migration exists in either direction.
+- The rollback target is a compatible previous Netlify deployment plus the same R2 state. Never roll back to a build missing query isolation or assume the CPU-limited Worker can rasterize misses.
 
 ## Validation
 
@@ -61,3 +61,9 @@ Report DNS/domain changes, the Worker retirement action, verification evidence p
 - 2026-09-06 — Rescoped per the Netlify-hosting decision: no Worker adapter or renderer client exists anymore (in-route rasterization needs none), so this story now owns DNS cutover, verification, and Worker retirement instead. Stays proposed until the hosting story is reviewed.
 
 - 2026-09-07 — Before cutover/Worker retirement, require hosted API query-isolation proof and invalidation of the old broad CDN entries. The Netlify subdomain currently serves a square image for a portrait request. See [cache-isolation blocker](notes/2026-09-07-netlify-cache-query-isolation.md); successful single-image access is insufficient for cutover.
+
+- 2026-09-07 — Owner confirms cache checks complete and explicitly chooses to keep `cataloghog.netlify.app`. Custom-domain work removed from current acceptance. Retirement remains pending live Worker/consumer inventory and reviewed prerequisites; no DNS changes or Worker deletion performed. See [operational runbook](../../research/external-render-service/runbook.md).
+
+- 2026-09-07 — Read-only live Cloudflare inventory: `catalog-forge` workers.dev and preview access are enabled; custom-domain lookup returned no domains. Zone-level routes and legacy feed consumers still need inventory before retirement. The parallel task confirmed it owns only publication review and will not modify hosting/deployment/DNS. No infrastructure mutation performed.
+
+- 2026-09-08 — Retirement completed after owner confirmed all consumers use Netlify and the parallel publication review finished. Public/preview Worker URLs disabled, Git integration disconnected (zero triggers), no zone/custom-domain routes; old hostname returns 403 and Netlify image remains 200 with identical bytes. Added disabled endpoint flags to Wrangler config. Known-good Netlify baseline and restoration details recorded in [retirement handoff](notes/2026-09-08-worker-retirement.md). Moved to in-review; no storage deletion or Netlify deployment.

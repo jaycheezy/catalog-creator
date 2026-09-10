@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FEED_PREVIEW_LIMIT, normalizePrice, parseFeedCsv } from "@/lib/feedImport";
+import { FEED_PREVIEW_LIMIT, normalizePrice, parseFeedCsv, parseFeedXml } from "@/lib/feedImport";
+import { validateCatalog } from "@/lib/catalogValidation";
 import { importRemoteFeed, MAX_FEED_BYTES } from "@/lib/remoteFeed";
+import { workflowXmlFeed } from "./fixtures/workflow";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -23,6 +25,8 @@ describe("full catalog imports", () => {
     expect(normalizePrice("1,234.56 USD")).toBe("1234.56 USD");
     expect(normalizePrice("USD 19.95")).toBe("19.95 USD");
     expect(normalizePrice("19.95")).toBe("19.95");
+    expect(normalizePrice("12.34.56 EUR")).toBe("12.34.56 EUR");
+    expect(normalizePrice("17,90,00 EUR")).toBe("17,90,00 EUR");
   });
 
   it("reports an unterminated quoted field instead of shifting columns", () => {
@@ -34,6 +38,23 @@ describe("full catalog imports", () => {
     const csv = `id,title,price\n${rows}`;
     expect(parseFeedCsv(csv)).toHaveLength(250);
     expect(parseFeedCsv(csv, "csv", FEED_PREVIEW_LIMIT)).toHaveLength(200);
+  });
+
+  it("normalizes an XML non-EUR sale and identifies a missing-image row", () => {
+    const rows = parseFeedXml(workflowXmlFeed, "fixture.xml");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      id: "TEA&CUP",
+      source_id: "xml:row:1",
+      title: "Tea & Cup ★",
+      description: "Green & bright ★",
+      price: "19.90 CHF",
+      sale_price: "15.50 CHF",
+      link: "https://shop.example/tea?size=large&color=green",
+      brand: "Leaf & Co",
+    });
+    expect(validateCatalog(rows, { imageChecks: "verified" }).issues)
+      .toContainEqual(expect.objectContaining({ code: "missing-image", rowIndexes: [1], productIds: ["NO-IMAGE"] }));
   });
 
   it("revalidates redirect destinations before fetching them", async () => {

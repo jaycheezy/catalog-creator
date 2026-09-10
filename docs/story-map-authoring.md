@@ -11,7 +11,7 @@ Copy `docs/templates/slice.md` into `docs/slices/<slice-id>/index.md`. Give it a
 Copy `docs/templates/story.md` into the slice directory with a descriptive filename. Set its unique ID, matching slice ID, journey step, status, effort, order, tags, dependencies and implementation maturity. Filenames become spec URLs; IDs are stable references used by dependency graphs. Rename deliberately and update Markdown links when needed. Every story also needs a `value` frontmatter field: one or two plain, non-technical sentences (20-400 characters) explaining what changes for the shop owner or shopper once the story is done. It appears behind the ⓘ icon on story cards.
 
 - Journey steps: `connect`, `validate`, `design`, `variants`, `feed`, `publish`, `test`.
-- Status: `proposed`, `ready`, `in-progress`, `in-review`, `done`.
+- Status: `proposed`, `ready`, `in-progress`, `in-review`, `done`, `wont-do` (dropped scope — dependents still treat it as an unfinished prerequisite).
 - Implementation: `outline` or `specified`.
 - Effort: `S`, `M`, `L`, `XL`.
 - Slice tones: `green`, `blue`, `violet`, `amber`, `zinc`.

@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
     try {
       publication = publicationSummary(await getPublicationRecord(id));
     } catch (error) {
-      console.error(JSON.stringify({ event: "publication_status_unavailable", projectId: id }));
+      console.error(JSON.stringify({ event: "publication_status_unavailable" }));
       void error;
     }
     return NextResponse.json({ ...project, revision: project.revision ?? 0, validation, publication }, { headers: { "Cache-Control": "private, no-store" } });
@@ -251,11 +251,18 @@ export async function PATCH(req: NextRequest) {
     };
     // The project aggregate is authoritative for every project feed/render
     // path, so it advances first: if its write fails, the legacy standalone
-    // template mirror never runs and no partial state is left behind. A
-    // mirror failure after a successful project write still reports an error
-    // rather than claiming full success.
+    // template mirror never runs and no partial state is left behind. The
+    // mirror is compatibility-only; its failure must not turn a confirmed
+    // aggregate save into an ambiguous error with an obsolete client revision.
     await saveCatalogProject(nextProject);
-    if (body.template) await saveTemplate(template);
+    if (body.template) {
+      try {
+        await saveTemplate(template);
+      } catch (error) {
+        const payload = durableStorageMessage(error);
+        console.error(JSON.stringify({ event: "project_template_mirror_failed", code: payload.code }));
+      }
+    }
     const variants = (Object.entries(nextProject.placementTemplates ?? {}) as [SizePresetId, Template][]).map(
       ([sizeId, saved]) => ({
         sizeId,
@@ -275,7 +282,7 @@ export async function PATCH(req: NextRequest) {
     });
   } catch (error) {
     const payload = durableStorageMessage(error);
-    console.error(JSON.stringify({ event: "project_save_failed", projectId: id, code: payload.code }));
+    console.error(JSON.stringify({ event: "project_save_failed", code: payload.code }));
     return NextResponse.json(payload, { status: error instanceof DurableStorageError ? 503 : 500 });
   }
 }

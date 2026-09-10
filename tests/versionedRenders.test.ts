@@ -53,10 +53,10 @@ describe("canonical product revisions", () => {
       { availability: "out of stock" as const },
       { condition: "used" as const },
       { id: "RENAMED" },
+      { inventory: "42" },
     ] as Partial<FeedRow>[]) {
       expect(await productRevision({ ...base, ...patch })).not.toBe(before);
     }
-    expect(await productRevision({ ...base, inventory: "changed-note" })).toBe(before);
   });
 
   it("digests with SHA-256 hex", async () => {
@@ -261,6 +261,54 @@ describe("versioned project render route", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("X-Render-Cache")).toBe("miss");
     expect(await response.text()).toContain("21.00 EUR");
+  });
+
+  it("keeps an exact cached URL after a later publication removes its product or template", async () => {
+    const current = project();
+    const product = current.products[1];
+    const revision = await productRevision(product);
+    const url = versionedUrl({
+      templateId: storyId,
+      productId: product.source_id!,
+      sizeId: "9:16",
+      productRevision: revision,
+      templateRevision: "2",
+    });
+    const first = await render(new NextRequest(url));
+    expect(first.status).toBe(200);
+    expect(first.headers.get("X-Render-Cache")).toBe("miss");
+    const bytes = await first.arrayBuffer();
+    const etag = first.headers.get("ETag");
+
+    const withoutProduct = project();
+    withoutProduct.products = withoutProduct.products.filter((row) => row.source_id !== product.source_id);
+    vi.mocked(getPublicationRecord).mockResolvedValue({
+      schemaVersion: 1,
+      projectId,
+      active: buildPublicationSnapshot(withoutProduct, validateCatalog(withoutProduct.products, { importComplete: true }), 2000),
+      lastAttempt: null,
+    });
+    const afterProductRemoval = await render(new NextRequest(url));
+    expect(afterProductRemoval.status).toBe(200);
+    expect(afterProductRemoval.headers.get("X-Render-Cache")).toBe("hit-stale");
+    expect(afterProductRemoval.headers.get("ETag")).toBe(etag);
+    expect(await afterProductRemoval.arrayBuffer()).toEqual(bytes);
+
+    const withoutTemplate = project();
+    withoutTemplate.placementTemplates = undefined;
+    vi.mocked(getPublicationRecord).mockResolvedValue({
+      schemaVersion: 1,
+      projectId,
+      active: buildPublicationSnapshot(withoutTemplate, validateCatalog(withoutTemplate.products, { importComplete: true }), 3000),
+      lastAttempt: null,
+    });
+    const afterTemplateRemoval = await render(new NextRequest(url));
+    expect(afterTemplateRemoval.status).toBe(200);
+    expect(afterTemplateRemoval.headers.get("X-Render-Cache")).toBe("hit-stale");
+    expect(await afterTemplateRemoval.arrayBuffer()).toEqual(bytes);
+
+    clearRenderMemoryForTests();
+    expect((await render(new NextRequest(url))).status).toBe(404);
   });
 
   it("rejects stale and malformed revisions without rendering", async () => {

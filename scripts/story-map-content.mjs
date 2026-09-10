@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import matter from 'gray-matter';
 
-const statuses = ['proposed', 'ready', 'in-progress', 'in-review', 'done'];
+const statuses = ['proposed', 'ready', 'in-progress', 'in-review', 'done', 'wont-do'];
 const steps = ['connect', 'validate', 'design', 'variants', 'feed', 'publish', 'test'];
 const requiredSections = ['Scope', 'Implementation guidance', 'Interfaces', 'Validation', 'Completion handoff'];
 function assert(value, message) { if (!value) throw new Error(message); }
@@ -149,6 +149,25 @@ export function applyStoryMove(files, move, context = {}) {
   const next = files.map((file, i) => i === index ? { path: nextPath, source } : file);
   compileStoryMap(next);
   return { files: next, path: nextPath, prevPath, changed: true };
+}
+export function findStoryFile(files, id) {
+  const index = files.findIndex(file => {
+    if (!/^docs\/slices\/[^/]+\/[^/]+\.md$/.test(file.path) || file.path.endsWith('/index.md') || file.path.endsWith('/notes.md')) return false;
+    try { return matter(file.source).data.id === id; } catch { return false; }
+  });
+  if (index < 0) throw new Error(`unknown story ${id}`);
+  return index;
+}
+export function applyStoryStatus(files, change) {
+  const { id, status } = change;
+  if (!statuses.includes(status)) throw new Error(`unknown status ${status}`);
+  const index = findStoryFile(files, id);
+  const current = matter(files[index].source).data;
+  if (current.status === status) return { files, path: files[index].path, changed: false };
+  const source = setFrontmatterField(files[index].source, 'status', status);
+  const next = files.map((file, i) => i === index ? { path: file.path, source } : file);
+  compileStoryMap(next);
+  return { files: next, path: files[index].path, changed: true };
 }
 export function generateStoryMap(root = process.cwd()) {
   const catalog = readStoryMap(root);

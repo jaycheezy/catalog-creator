@@ -1,20 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
-import { sanitizeProjectId } from "@/lib/catalogProject";
+import { SIZE_PRESETS } from "@/editor/types";
+import { isSizePresetId, sanitizeProjectId, type CatalogProject } from "@/lib/catalogProject";
 import { getCatalogProject } from "@/lib/catalogProjectStore";
 import { validateCatalog } from "@/lib/catalogValidation";
 import {
-  blankPublicationRecord,
   buildPublicationSnapshot,
   type CatalogPublicationRecord,
   type PublicationAttempt,
 } from "@/lib/catalogPublication";
-import { getPublicationRecord, savePublicationRecord } from "@/lib/catalogPublicationStore";
+import {
+  activatePublicationRecord,
+  PublicationWriteConflictError,
+  recordPublicationFailure,
+} from "@/lib/catalogPublicationStore";
 import { DurableStorageError, durableStorageMessage } from "@/lib/durableStorage";
 
 export const runtime = "nodejs";
 
-function failedAttempt(revision: number, code: string, message: string): PublicationAttempt {
+function failedAttempt(revision: number, code: string, message: string): PublicationAttempt & { status: "failed" } {
   return {
     status: "failed",
     attemptedRevision: revision,
@@ -24,14 +28,41 @@ function failedAttempt(revision: number, code: string, message: string): Publica
 }
 
 /** Record a failed attempt without replacing the active snapshot. */
-async function persistFailure(projectId: string, attempt: PublicationAttempt): Promise<void> {
+async function persistFailure(projectId: string, attempt: PublicationAttempt & { status: "failed" }): Promise<void> {
   try {
-    const current: CatalogPublicationRecord = (await getPublicationRecord(projectId)) ?? blankPublicationRecord(projectId);
-    await savePublicationRecord({ ...current, lastAttempt: attempt });
+    await recordPublicationFailure(projectId, attempt);
   } catch (error) {
-    console.error(JSON.stringify({ event: "publication_attempt_persist_failed", projectId, code: "PUBLICATION_ATTEMPT_PERSIST_FAILED" }));
+    console.error(JSON.stringify({ event: "publication_attempt_persist_failed", code: "PUBLICATION_ATTEMPT_PERSIST_FAILED" }));
     void error;
   }
+}
+
+function publicationTemplateError(project: CatalogProject): string | null {
+  const entries: [string, CatalogProject["template"]][] = [
+    ["master", project.template],
+    ...Object.entries(project.placementTemplates ?? {}),
+  ];
+  const ids = new Set<string>();
+  for (const [placementKey, template] of entries) {
+    if (!template || !Array.isArray(template.layers) || !template.id) {
+      return `The saved ${placementKey} design is incomplete. Save it before publishing.`;
+    }
+    if (!isSizePresetId(template.sizeId)) {
+      return `The saved ${placementKey} design has an unsupported placement size. Save it again before publishing.`;
+    }
+    if (placementKey !== "master" && placementKey !== template.sizeId) {
+      return `The saved ${placementKey} placement contains the wrong size. Save all placements again before publishing.`;
+    }
+    const preset = SIZE_PRESETS.find((candidate) => candidate.id === template.sizeId);
+    if (!preset || template.width !== preset.width || template.height !== preset.height) {
+      return `The saved ${placementKey} design dimensions do not match ${template.sizeId}. Save it again before publishing.`;
+    }
+    if (ids.has(template.id)) {
+      return "Two saved placements share one template identity. Save all placements again before publishing.";
+    }
+    ids.add(template.id);
+  }
+  return null;
 }
 
 export async function POST(req: NextRequest) {
@@ -46,18 +77,25 @@ export async function POST(req: NextRequest) {
   }
   const id = sanitizeProjectId(body.id);
   if (!id) return NextResponse.json({ error: "Invalid or missing project id" }, { status: 400 });
+  if (!Number.isInteger(body.expectedRevision) || Number(body.expectedRevision) < 0) {
+    return NextResponse.json({
+      error: "A valid expectedRevision is required. Reload the project before publishing.",
+      code: "INVALID_EXPECTED_REVISION",
+      retryable: false,
+    }, { status: 400 });
+  }
 
   let project;
   try {
     project = await getCatalogProject(id);
   } catch (error) {
     const payload = durableStorageMessage(error);
-    console.error(JSON.stringify({ event: "publication_project_read_failed", projectId: id, code: payload.code }));
+    console.error(JSON.stringify({ event: "publication_project_read_failed", code: payload.code }));
     return NextResponse.json(payload, { status: error instanceof DurableStorageError ? 503 : 500 });
   }
   if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
   const currentRevision = project.revision ?? 0;
-  if (body.expectedRevision !== undefined && body.expectedRevision !== currentRevision) {
+  if (body.expectedRevision !== currentRevision) {
     return NextResponse.json({
       error: "This project changed in another session. Reload it before publishing.",
       code: "REVISION_CONFLICT",
@@ -78,8 +116,9 @@ export async function POST(req: NextRequest) {
     await persistFailure(id, attempt);
     return NextResponse.json({ error: attempt.error?.message ?? "Publication failed.", code: attempt.error?.code ?? "PUBLICATION_FAILED", retryable: false, attempt }, { status: 422 });
   }
-  if (!project.template?.layers || !project.template.width || !project.template.height) {
-    const attempt = failedAttempt(currentRevision, "INVALID_TEMPLATE", "The saved design is incomplete. Save the design before publishing.");
+  const templateError = publicationTemplateError(project);
+  if (templateError) {
+    const attempt = failedAttempt(currentRevision, "INVALID_TEMPLATE", templateError);
     await persistFailure(id, attempt);
     return NextResponse.json({ error: attempt.error?.message ?? "Publication failed.", code: attempt.error?.code ?? "PUBLICATION_FAILED", retryable: false, attempt }, { status: 422 });
   }
@@ -134,17 +173,27 @@ export async function POST(req: NextRequest) {
       ...(skippedProductIds.length > 0 ? { skippedProductIds } : {}),
     },
   };
+  let storedRecord: CatalogPublicationRecord;
   try {
-    await savePublicationRecord(record);
+    storedRecord = await activatePublicationRecord(record);
   } catch (error) {
+    if (error instanceof PublicationWriteConflictError) {
+      return NextResponse.json({
+        error: error.message,
+        code: error.code,
+        retryable: false,
+        revision: error.currentRevision,
+      }, { status: 409 });
+    }
     const payload = durableStorageMessage(error);
-    console.error(JSON.stringify({ event: "publication_save_failed", projectId: id, code: payload.code }));
+    console.error(JSON.stringify({ event: "publication_save_failed", code: payload.code }));
     return NextResponse.json(payload, { status: error instanceof DurableStorageError ? 503 : 500 });
   }
 
+  const active = storedRecord.active!;
   const placements = [
-    { sizeId: snapshot.template.sizeId, templateId: snapshot.template.id, templateRevision: snapshot.template.revision ?? 0, width: snapshot.template.width, height: snapshot.template.height },
-    ...Object.entries(snapshot.placementTemplates ?? {}).map(([sizeId, saved]) => ({
+    { sizeId: active.template.sizeId, templateId: active.template.id, templateRevision: active.template.revision ?? 0, width: active.template.width, height: active.template.height },
+    ...Object.entries(active.placementTemplates ?? {}).map(([sizeId, saved]) => ({
       sizeId,
       templateId: saved.id,
       templateRevision: saved.revision ?? 0,
@@ -155,14 +204,14 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     id,
-    projectRevision: currentRevision,
-    publishedAt: now,
+    projectRevision: active.projectRevision,
+    publishedAt: active.publishedAt,
     feedUrl: `/api/feed?projectId=${id}`,
     placements,
-    publishedRows: snapshot.products.length,
+    publishedRows: active.products.length,
     totalRows: project.products.length,
-    skipped: { productIds: skippedProductIds, codes: skippedCodes },
-    validation: { status: snapshotValidation.status, errorCount: snapshotValidation.errorCount, warningCount: snapshotValidation.warningCount },
-    attempt: record.lastAttempt,
+    skipped: active.skipped,
+    validation: { status: active.validation.status, errorCount: active.validation.errorCount, warningCount: active.validation.warningCount },
+    attempt: storedRecord.lastAttempt,
   });
 }

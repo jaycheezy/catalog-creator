@@ -24,11 +24,24 @@ export type PublicationSourceSummary = {
   currencyCodes?: string[];
 };
 
+function safeSourceValue(source: CatalogProjectSource): string {
+  if (source.type === "csv") {
+    return source.value.split(/[\\/]/).pop()?.replace(/[\r\n\t]/g, " ").slice(0, 200) || "catalog.csv";
+  }
+  try {
+    // Feed URLs can contain signed query parameters. The frozen catalog does
+    // not need them, so the publication stores only a display-safe origin.
+    return new URL(source.value).origin;
+  } catch {
+    return "unavailable";
+  }
+}
+
 export function summarizeSource(source: CatalogProjectSource): PublicationSourceSummary {
   if (source.type === "store") {
-    return { type: source.type, value: source.value, platform: source.platform, currencyCodes: source.currencyCodes };
+    return { type: source.type, value: safeSourceValue(source), platform: source.platform, currencyCodes: source.currencyCodes };
   }
-  return { type: source.type, value: source.value };
+  return { type: source.type, value: safeSourceValue(source) };
 }
 
 export type CatalogPublicationSnapshot = {

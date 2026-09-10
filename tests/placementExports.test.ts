@@ -183,12 +183,17 @@ describe("placement contract helpers", () => {
 
 let stored: CatalogProject | null = null;
 let storeError: Error | null = null;
+let mirrorError: Error | null = null;
 
 vi.mock("@/lib/auth", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/auth")>();
   return { ...original, isAuthenticated: vi.fn(async () => true) };
 });
-vi.mock("@/lib/templateStore", () => ({ saveTemplate: vi.fn(async () => undefined) }));
+vi.mock("@/lib/templateStore", () => ({
+  saveTemplate: vi.fn(async () => {
+    if (mirrorError) throw mirrorError;
+  }),
+}));
 vi.mock("@/lib/catalogProjectStore", () => ({
   saveCatalogProject: vi.fn(async (project: CatalogProject) => {
     if (storeError) throw storeError;
@@ -204,6 +209,7 @@ import { saveTemplate } from "@/lib/templateStore";
 beforeEach(() => {
   stored = savedProject();
   storeError = null;
+  mirrorError = null;
   vi.clearAllMocks();
 });
 
@@ -320,5 +326,21 @@ describe("project placement-template API", () => {
     expect(stored!.placementTemplates).toBeUndefined();
     expect(stored!.revision).toBe(3);
     expect(saveTemplate).not.toHaveBeenCalled();
+  });
+
+  it("keeps an authoritative project save successful when its legacy template mirror fails", async () => {
+    mirrorError = new DurableStorageError("Legacy mirror unavailable");
+    const response = await PATCH(patchRequest({
+      id: stored!.id,
+      expectedRevision: 3,
+      template: { ...savedProject().template, name: "Confirmed project design" },
+      placementTemplates: placementInputs(),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, revision: 4 });
+    expect(stored!.template).toMatchObject({ name: "Confirmed project design", revision: 3 });
+    expect(stored!.placementTemplates?.["9:16"]).toMatchObject({ width: 1080, height: 1920 });
+    expect(saveTemplate).toHaveBeenCalledOnce();
   });
 });

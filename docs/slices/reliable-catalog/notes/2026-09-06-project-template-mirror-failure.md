@@ -1,10 +1,10 @@
 ---
 id: reliable-project-template-mirror-failure
-title: Project saves still have an aggregate-success mirror-failure state
+title: Project saves treat the standalone template mirror as best effort
 type: finding
-status: open
+status: resolved
 author: Codex
-updated: "2026-09-06"
+updated: "2026-09-08"
 story: c-reliable-placement-exports
 affects:
   - c-reliable-durable-saves
@@ -14,18 +14,18 @@ affects:
 
 ## Summary
 
-Writing the authoritative project aggregate before the legacy standalone template mirror fixes the reviewed aggregate-failure case. The inverse failure remains possible: the project advances, the mirror fails, and the request reports an error to a client that still holds the old project revision.
+Resolved. The project aggregate remains the authoritative write and the legacy standalone template is now a best-effort compatibility mirror. Once the aggregate succeeds, a mirror failure cannot turn the request into an ambiguous error or leave the editor holding an obsolete revision.
 
 ## Evidence
 
-`src/app/api/projects/route.ts` awaits `saveCatalogProject(nextProject)` and then awaits `saveTemplate(template)`. These are separate R2 object writes without a transaction. If the second write fails, the common catch returns a retryable storage error even though the project revision and placement snapshots are already durable. Retrying with the client's unchanged `expectedRevision` then produces a revision conflict until the project is reloaded.
+`src/app/api/projects/route.ts` still writes `saveCatalogProject(nextProject)` first. An aggregate failure returns the existing retryable 503 and never calls the mirror. After aggregate success, `saveTemplate(template)` runs inside its own guarded compatibility step; failure emits only `{ event, code }` without the project capability ID and the route returns the successful aggregate revision.
 
-The combined-payload regression correctly proves that an aggregate failure does not call the mirror. It does not and cannot make the two independent writes atomic in the other direction.
+`tests/placementExports.test.ts` covers both directions. The combined aggregate-failure case proves no mirror call and no state change. The mirror-failure case proves a 200 response at the new project revision, with the updated master and all four placements durable while the mirror throws.
 
 ## Impact
 
-The project aggregate remains authoritative, so this does not undo atomic placement persistence or block the current placement fix. Later publication and agent-driven save work need an explicit policy for the legacy mirror so the UI never reports an ambiguous save result.
+Project-backed editor, feed, render, and publication paths keep one authoritative state and one confirmed client revision. A failed mirror may leave legacy domain/template feeds on their prior template until a later successful save reconciles it; it cannot affect the project feed or publication snapshot.
 
 ## Next action
 
-Before publication or agent-driven saves rely on this transition, choose one contract: remove the mirror for project saves, make it best-effort after returning authoritative project success, or add compensating/reconciliation state. Add a route test for mirror failure after aggregate success and document the client recovery behavior.
+Keep the two directional regressions. If legacy domain/template feeds are retired, remove the compatibility mirror and its warning path explicitly rather than changing project-save semantics again.

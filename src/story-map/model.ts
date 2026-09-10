@@ -1,4 +1,4 @@
-export type StoryStatus = 'proposed' | 'ready' | 'in-progress' | 'in-review' | 'done';
+export type StoryStatus = 'proposed' | 'ready' | 'in-progress' | 'in-review' | 'done' | 'wont-do';
 export type Story = {
   id: string; slice: string; slug: string; title: string; step: string;
   status: StoryStatus; effort: string; order: number; tags: string[];
@@ -11,7 +11,7 @@ export type Slice = {
   tone: 'green' | 'blue' | 'violet' | 'amber' | 'zinc'; path: string; body: string;
 };
 export const statusLabels: Record<StoryStatus, string> = {
-  proposed: 'Proposed', ready: 'Ready', 'in-progress': 'In progress', 'in-review': 'In review', done: 'Done',
+  proposed: 'Proposed', ready: 'Ready', 'in-progress': 'In progress', 'in-review': 'In review', done: 'Done', 'wont-do': "Won't do",
 };
 export function storyUrl(story: Pick<Story, 'slice' | 'slug'>) {
   return `/story-map/specs/${story.slice}/${story.slug}`;

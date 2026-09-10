@@ -50,7 +50,7 @@ Legacy `handle` URLs still work when they identify exactly one row. Ambiguous re
 
 ## Deploy on Netlify (production)
 
-The production app runs on Netlify's free plan; product data and image files stay in Cloudflare R2, reached over its S3-compatible API. Rasterization happens inside the serverless function (10 s default timeout; measured renders need about a second), so no separate renderer service exists.
+The production app runs on Netlify's free plan; product data and image files stay in Cloudflare R2, reached over its S3-compatible API. Rasterization happens inside the serverless function, so no separate renderer service exists.
 
 1. Create an R2 API token (Cloudflare dashboard → R2 → API tokens, object read/write on the two buckets below) and set these **server-side** environment variables in Netlify (never `NEXT_PUBLIC`, never committed):
 
@@ -62,9 +62,9 @@ The production app runs on Netlify's free plan; product data and image files sta
 | `R2_RENDERS_BUCKET` | Render cache bucket name (e.g. `catalog-forge-renders`) |
 | `ADMIN_PASSWORD` | Editor login password |
 
-2. Deploy: `netlify.toml` already points the build at `npm run build`. Attach the custom domain after the first green deploy.
+2. Deploy: `netlify.toml` already points the build at `npm run build`. The owner-selected production address is `cataloghog.netlify.app`; custom-domain work is deferred.
 3. Verify anonymously: publish a fixture project, fetch `/api/feed?projectId=…`, open one image URL twice (second response carries the same ETag from R2), and confirm `catalog-forge` admin pages still require login.
-4. Watch the Netlify credit dashboard (300 free credits/month shared across deploys, bandwidth, requests, and compute) and the Cloudflare R2 dashboard. Battery-included runbook lives with the release story.
+4. Watch the actual Netlify Free Legacy allowances (100 GB bandwidth and 300 build minutes observed on September 8) and Cloudflare R2 usage. See the [operations runbook](docs/research/external-render-service/runbook.md). The old Worker’s public/preview URLs are disabled and Git builds disconnected; Netlify is production.
 
 Local development is unchanged (`npm run dev`, `/tmp` file fallbacks); set `CATALOG_FORGE_ALLOW_LOCAL_STORAGE=true` to exercise a local production build without Cloudflare.
 

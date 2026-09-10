@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { applyStoryMove, compileStoryMap, readStoryMap } from '../scripts/story-map-content.mjs';
+import { applyStoryMove, applyStoryStatus, compileStoryMap, readStoryMap } from '../scripts/story-map-content.mjs';
 import { createHandoff, isReady, unmetDependencies, relatedNotes, sortNotes, type ImplementationNote, type Story, type Slice } from '../src/story-map/model';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement } from 'react';
 import { SpecMarkdown } from '../src/components/story-map/SpecMarkdown';
+import { StoryCard } from '../src/components/story-map/StoryMap';
 
 const frontmatter = (data: object, body: string) => `---\n${Object.entries(data).map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join('\n')}\n---\n${body}`;
 const slice = { path: 'docs/slices/example/index.md', source: frontmatter({ id: 'example', title: 'Example', description: 'An outcome', order: 0, tone: 'blue' }, '# Example') };
@@ -97,6 +98,70 @@ describe('Story moves', () => {
     expect(() => applyStoryMove(files, { id: 'one', slice: 'nope', step: 'design' })).toThrow('unknown slice');
     expect(() => applyStoryMove(files, { id: 'one', slice: 'example', step: 'nope' })).toThrow('unknown step');
     expect(() => applyStoryMove([slice, otherSlice, moveFile('one', 'example', 'one'), moveFile('two', 'other', 'one')], { id: 'one', slice: 'other', step: 'feed' }, { sliceIds: ['example', 'other'] })).toThrow('already exists');
+  });
+});
+
+describe('Story status changes', () => {
+  it('updates the status frontmatter in place without moving the file', () => {
+    const files = [slice, file('one')];
+    const result = applyStoryStatus(files, { id: 'one', status: 'in-progress' });
+    expect(result.changed).toBe(true);
+    expect(result.path).toBe('docs/slices/example/one.md');
+    expect(result.files.find(entry => entry.path === result.path)?.source).toContain('status: "in-progress"');
+    expect(compileStoryMap(result.files).stories[0].status).toBe('in-progress');
+  });
+  it('reports no-ops and rejects unknown stories and statuses', () => {
+    const files = [slice, file('one')];
+    const same = applyStoryStatus(files, { id: 'one', status: 'ready' });
+    expect(same.changed).toBe(false);
+    expect(same.files).toBe(files);
+    expect(() => applyStoryStatus(files, { id: 'missing', status: 'done' })).toThrow('unknown story');
+    expect(() => applyStoryStatus(files, { id: 'one', status: 'todo' })).toThrow('unknown status');
+  });
+  it('rejects status values the story map validation forbids', () => {
+    const outline = [slice, file('one', { implementation: 'outline', status: 'proposed' })];
+    expect(() => applyStoryStatus(outline, { id: 'one', status: 'ready' })).toThrow('ready story');
+  });
+  it('accepts wont-do as a terminal status that never counts as ready', () => {
+    const result = compileStoryMap([slice, file('one', { status: 'wont-do' }), file('two', { dependsOn: ['one'] })]);
+    const stories = result.stories as Story[];
+    expect(stories.find(item => item.id === 'one')?.status).toBe('wont-do');
+    expect(isReady(stories.find(item => item.id === 'two')!, stories)).toBe(false);
+    expect(unmetDependencies(stories.find(item => item.id === 'two')!, stories)).toEqual(['one']);
+    const changed = applyStoryStatus([slice, file('one')], { id: 'one', status: 'wont-do' });
+    expect(changed.changed).toBe(true);
+    expect(changed.files.find(entry => entry.path === changed.path)?.source).toContain('status: "wont-do"');
+  });
+});
+
+describe('Story card variants', () => {
+  const cardStory = (): Story => ({
+    id: 'card-one', slice: 'example', slug: 'card-one', title: 'Card title', step: 'design',
+    status: 'in-progress', effort: 'M', order: 0, tags: [], dependsOn: [], implementation: 'specified',
+    value: 'Saves you time by handling this step automatically, so you can focus on selling.',
+    path: 'docs/slices/example/card-one.md', body: '',
+    description: 'A longer card description that spans a couple of lines so clamping can be observed.',
+    acceptance: ['Do the thing'], progress: '',
+  });
+  const renderCard = (variant: 'studio' | 'ribbon' | 'compact') => renderToStaticMarkup(createElement(StoryCard, {
+    story: cardStory(), stories: [cardStory()], variant, dimmed: false, saving: false, savingKind: null,
+    onDragStart: () => {}, onDragEnd: () => {}, onStatusSelect: () => {},
+  }));
+  it('renders three visually distinct variants with the same content and actions', () => {
+    const studio = renderCard('studio');
+    const ribbon = renderCard('ribbon');
+    const compact = renderCard('compact');
+    for (const html of [studio, ribbon, compact]) {
+      expect(html).toContain('Card title');
+      expect(html).toContain('Change status');
+      expect(html).toContain('View implementation spec');
+    }
+    expect(studio).not.toContain('border-l-4');
+    expect(studio).not.toContain('line-clamp-2');
+    expect(ribbon).toContain('border-l-4');
+    expect(ribbon).toContain('border-l-amber-400');
+    expect(compact).toContain('line-clamp-2');
+    expect(compact).not.toContain('border-l-4');
   });
 });
 

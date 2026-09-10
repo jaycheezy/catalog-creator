@@ -141,26 +141,64 @@ export function normalizePrice(raw: string): string {
   const suffix = compact.match(/^(-?[\d.,]+)([A-Za-z]{3})?$/);
   const prefix = compact.match(/^([A-Za-z]{3})(-?[\d.,]+)$/);
   if (!suffix && !prefix) return s.slice(0, 30);
-  let amount = suffix?.[1] ?? prefix![2];
+  const amount = suffix?.[1] ?? prefix![2];
   const currency = suffix?.[2] ?? prefix?.[1] ?? "";
-  const lastComma = amount.lastIndexOf(",");
-  const lastDot = amount.lastIndexOf(".");
-  if (lastComma >= 0 && lastDot >= 0) {
-    const decimal = lastComma > lastDot ? "," : ".";
-    amount = decimal === ","
-      ? amount.replace(/\./g, "").replace(",", ".")
-      : amount.replace(/,/g, "");
-  } else if (lastComma >= 0) {
-    const decimals = amount.length - lastComma - 1;
-    amount = decimals > 0 && decimals <= 2 ? amount.replace(",", ".") : amount.replace(/,/g, "");
+  const sign = amount.startsWith("-") ? "-" : "";
+  const unsigned = sign ? amount.slice(1) : amount;
+  const commaCount = (unsigned.match(/,/g) ?? []).length;
+  const dotCount = (unsigned.match(/\./g) ?? []).length;
+  let normalized: string | null = null;
+
+  if (commaCount > 0 && dotCount > 0) {
+    const decimal = unsigned.lastIndexOf(",") > unsigned.lastIndexOf(".") ? "," : ".";
+    const grouping = decimal === "," ? "." : ",";
+    if ((decimal === "," ? commaCount : dotCount) === 1) {
+      const [integer, fraction] = unsigned.split(decimal);
+      const groupedInteger = new RegExp(`^\\d{1,3}(?:\\${grouping}\\d{3})*$`);
+      if (/^\d{1,2}$/.test(fraction ?? "") && (/^\d+$/.test(integer) || groupedInteger.test(integer))) {
+        normalized = `${integer.replaceAll(grouping, "")}.${fraction}`;
+      }
+    }
+  } else if (commaCount > 0 || dotCount > 0) {
+    const separator = commaCount > 0 ? "," : ".";
+    const parts = unsigned.split(separator);
+    if (parts.length === 2 && /^\d+$/.test(parts[0]) && /^\d{1,2}$/.test(parts[1])) {
+      normalized = `${parts[0]}.${parts[1]}`;
+    } else if (/^\d{1,3}$/.test(parts[0]) && parts.length > 1 && parts.slice(1).every((part) => /^\d{3}$/.test(part))) {
+      normalized = parts.join("");
+    }
+  } else if (/^\d+$/.test(unsigned)) {
+    normalized = unsigned;
   }
-  const num = Number.parseFloat(amount);
-  if (isNaN(num)) return s.slice(0, 30);
+
+  if (normalized === null) return s.slice(0, 30);
+  const num = Number(`${sign}${normalized}`);
+  if (!Number.isFinite(num)) return s.slice(0, 30);
   const cur = currency.toUpperCase();
   return `${num.toFixed(2)}${cur ? ` ${cur}` : ""}`;
 }
 
 // ---------- XML (Google Shopping RSS / sitemap-ish product feeds) ----------
+
+function decodeXmlEntities(value: string): string {
+  const named: Record<string, string> = {
+    amp: "&",
+    apos: "'",
+    gt: ">",
+    lt: "<",
+    quot: '"',
+  };
+  return value.replace(/&(#(?:x[0-9a-f]+|\d+)|amp|apos|gt|lt|quot);/gi, (match, entity: string) => {
+    if (entity[0] !== "#") return named[entity.toLowerCase()] ?? match;
+    const hex = entity[1]?.toLowerCase() === "x";
+    const point = Number.parseInt(entity.slice(hex ? 2 : 1), hex ? 16 : 10);
+    try {
+      return Number.isFinite(point) ? String.fromCodePoint(point) : match;
+    } catch {
+      return match;
+    }
+  });
+}
 
 function tagInner(xml: string, names: string[]): string {
   for (const n of names) {
@@ -168,7 +206,9 @@ function tagInner(xml: string, names: string[]): string {
     const re = new RegExp(`<(?:\\w+:)?${n}[^>]*>([\\s\\S]*?)</(?:\\w+:)?${n}>`, "i");
     const m = xml.match(re);
     if (m) {
-      return m[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+      return decodeXmlEntities(
+        m[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(),
+      );
     }
   }
   return "";

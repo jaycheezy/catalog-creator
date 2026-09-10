@@ -70,15 +70,17 @@ describe("S3-compatible R2 seam", () => {
       return {};
     };
     const bucket = await getStoreBucket("templates");
-    await bucket!.put("templates/abc.json", JSON.stringify({ hello: "world" }), {
+    expect(await bucket!.put("templates/abc.json", JSON.stringify({ hello: "world" }), {
       httpMetadata: { contentType: "application/json" },
       customMetadata: { etag: '"abc"' },
-    });
+      onlyIf: { etagMatches: '"previous"' },
+    })).toBe(true);
     expect(putInput).toMatchObject({
       Bucket: "templates-bucket",
       Key: "templates/abc.json",
       ContentType: "application/json",
       Metadata: { etag: '"abc"' },
+      IfMatch: '"previous"',
     });
     expect(s3.sent[0].name).toBe("PutObjectCommand");
   });
@@ -87,18 +89,30 @@ describe("S3-compatible R2 seam", () => {
     const bytes = new TextEncoder().encode("{\"rev\":2}");
     s3.getHandler = async (input) => {
       expect(input).toMatchObject({ Bucket: "renders-bucket", Key: "renders/v1/x.png" });
-      return { Body: { transformToByteArray: async () => bytes }, Metadata: { etag: '"x.2.r1"' } };
+      return { Body: { transformToByteArray: async () => bytes }, ETag: '"stored"', Metadata: { etag: '"x.2.r1"' } };
     };
     const bucket = await getStoreBucket("renders");
     const object = await bucket!.get("renders/v1/x.png");
     expect(await object!.text()).toBe("{\"rev\":2}");
     expect([...new Uint8Array(await object!.arrayBuffer())]).toEqual([...bytes]);
     expect(object!.customMetadata).toEqual({ etag: '"x.2.r1"' });
+    expect(object!.etag).toBe('"stored"');
 
     s3.getHandler = async () => {
       throw Object.assign(new Error("not found"), { name: "NoSuchKey" });
     };
     expect(await bucket!.get("renders/v1/missing.png")).toBeNull();
+  });
+
+  it("reports a lost S3 conditional write without treating it as storage failure", async () => {
+    s3.putHandler = async () => {
+      throw Object.assign(new Error("precondition failed"), { name: "PreconditionFailed", $metadata: { httpStatusCode: 412 } });
+    };
+    const bucket = await getStoreBucket("templates");
+    expect(await bucket!.put("catalog-publications/v1/p.json", "{}", {
+      onlyIf: { etagDoesNotMatch: "*" },
+    })).toBe(false);
+    expect(s3.sent[0].input).toMatchObject({ IfNoneMatch: "*" });
   });
 
   it("lists paginated keys under a prefix", async () => {
