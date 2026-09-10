@@ -196,7 +196,12 @@ async function generateFeed(req: NextRequest) {
         "Content-Disposition": `attachment; filename="${filename}"`,
         "Cache-Control": draftPreview
           ? "private, no-store"
-          : "public, s-maxage=3600, stale-while-revalidate=600",
+          : projectId
+            // The project URL is stable across publications, so every fetch
+            // must revalidate to expose the newly versioned image URLs. The
+            // images themselves are immutable and retain long-lived caching.
+            ? "public, max-age=0, must-revalidate"
+            : "public, s-maxage=3600, stale-while-revalidate=600",
         "X-Total-Products": String(totalProducts),
         "X-Total-Variants": String(rows.length),
         "X-Catalog-Validation": validation.status,

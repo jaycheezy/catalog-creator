@@ -224,7 +224,9 @@ describe("project publication endpoint", () => {
   it("republishes updates through the same stable URL with new immutable images", async () => {
     expect((await publish(publishRequest({ id: projectId, expectedRevision: 3 }))).status).toBe(200);
     vi.mocked(isAuthenticated).mockResolvedValue(false);
-    const firstCsv = await (await anonFeed()).text();
+    const firstFeed = await anonFeed();
+    expect(firstFeed.headers.get("Cache-Control")).toBe("public, max-age=0, must-revalidate");
+    const firstCsv = await firstFeed.text();
     const firstImage = imageLinkFor(firstCsv, "shopify:variant:102");
     const firstPng = await render(new NextRequest(firstImage));
     expect(firstPng.status).toBe(200);
@@ -238,7 +240,9 @@ describe("project publication endpoint", () => {
     expect((await publish(publishRequest({ id: projectId, expectedRevision: 4 }))).status).toBe(200);
 
     vi.mocked(isAuthenticated).mockResolvedValue(false);
-    const secondCsv = await (await anonFeed()).text();
+    const secondFeed = await anonFeed();
+    expect(secondFeed.headers.get("Cache-Control")).toBe("public, max-age=0, must-revalidate");
+    const secondCsv = await secondFeed.text();
     expect(secondCsv).not.toBe(firstCsv);
     const secondImage = imageLinkFor(secondCsv, "shopify:variant:102");
     expect(secondImage).not.toBe(firstImage);

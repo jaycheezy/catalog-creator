@@ -3,7 +3,7 @@ id: "c-reliable-publish-project"
 slice: "reliable-catalog"
 title: "Publish and reopen the correct project feed"
 step: "publish"
-status: "done"
+status: "in-review"
 effort: "M"
 order: 17
 tags: ["next"]
@@ -19,6 +19,8 @@ value: "Keeps your published product feed saved and reopenable, so you can updat
 Make the feed URL a durable project output that can be reopened and updated after leaving the editor, including projects created from CSV or feed URLs.
 
 ## Progress
+
+- 2026-09-10 — Production verification reopened review after deploy `6aa2fe6d9942ce0008928f2d` exposed a stale stable-feed response after a successful republish. The project feed advertised a one-hour shared-cache TTL, so Netlify could return the previous CSV and old immutable image URL. The local fix makes stable `projectId` feeds revalidate on every request while leaving legacy store feeds and immutable PNG caching intact. Public-boundary regressions pass (3 files / 28 tests); the full gate is green (23 files / 152 tests, typecheck, 0 lint warnings, Next build, OpenNext/Cloudflare build, and clean diff whitespace). Redeploy and same-URL production proof are required before returning this story to `done`; see [the production blocker](../external-render-service/notes/2026-09-10-netlify-stable-feed-staleness.md).
 
 - 2026-09-08 — Completed after final review closed the publication race and draft-safety gaps. Publish now requires an exact `expectedRevision`, rejects noncanonical or incomplete placement templates, and refuses to publish while the editor has unsaved master or placement drafts. Source summaries retain only a CSV basename or remote origin, so signed query parameters, credentials, and local paths never enter the frozen record. Publication activation and failure recording use conditional R2/S3 writes with bounded retries: an older success or failed attempt cannot replace a newer active snapshot or erase newer attempt history, while a duplicate publish of the same revision is idempotent. Capability project IDs were removed from storage-error logs. New storage, route, adapter, source-sanitization, and editor-state regressions pass. `npm run check` is green (23 files / 149 tests, typecheck, 0 lint warnings), and the OpenNext/Cloudflare build passes. An isolated Workerd run against persisted local R2 proved missing-revision rejection, two concurrent same-revision publishes returning the same activation time, reopen at revision 1, anonymous feed access, and identical PNG bytes across `miss` → `hit`. Netlify is the current production route through the R2 S3 adapter; deployed evidence remains with `c-external-render-release`, and the supported-source/Meta proof remains with `c-reliable-workflow-check`.
 - 2026-09-06 — Publish-valid-rows policy adopted: the endpoint publishes rows without errors and skips error rows with recorded IDs/codes (re-validated subset verdict frozen in the snapshot); only incomplete imports, empty catalogs, and fully-invalid catalogs 422. Blocking-failure messages now name error-severity codes only (warnings/info excluded). Snapshot, attempt, summary, publish response, and editor publish bar all carry skipped rows with an amber live-feed notice and reopen-safe counts. Slice contract updated to match. Story stays `in-review` pending review.

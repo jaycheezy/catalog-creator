@@ -2,7 +2,11 @@
 
 Production address: `https://cataloghog.netlify.app`. The owner explicitly chose to retain this address on 2026-09-07. Custom-domain attachment and DNS cutover are deferred; they are not prerequisites for using the current production app.
 
-## Current handoff — September 8
+## Current handoff — September 10
+
+The reviewed checkout was deployed to Netlify as deploy `6aa2fe6d9942ce0008928f2d`, commit `d36c377cef13c5bae80349aaac45e31c2b812349`, and was `ready`. A production verification run successfully reached republish with an isolated 75-row fixture, then exposed a release blocker: the stable project feed retained its prior CSV because its response allowed one hour of shared CDN caching. The local correction requires revalidation for stable `projectId` feeds. See the [production finding](../../slices/external-render-service/notes/2026-09-10-netlify-stable-feed-staleness.md). Redeploy and repeat the matrix before treating any remaining checklist item as closed.
+
+## Prior handoff — September 8
 
 Worker retirement completed: production and preview access off, Git disconnected, API confirms zero triggers, former hostname returns 403. Owner confirmed all feeds use Netlify; publication review is done locally. The [retirement evidence](../../slices/external-render-service/notes/2026-09-08-worker-retirement.md) supersedes the pending retirement/billing entries below. Current baseline is Netlify deployment `6a9f0dd706a33b0008cf9f48` / commit `53b3bf0`, with post-retirement image verification. Account is Free Legacy.
 
@@ -10,6 +14,7 @@ Worker retirement completed: production and preview access off, Git disconnected
 
 | Area | Evidence and status |
 | --- | --- |
+| Current deployment and stable-feed update | Deploy `6aa2fe6d9942ce0008928f2d` matched commit `d36c377`. The isolated run passed through successful update publication, but the unchanged public feed URL returned the earlier CSV/image URL. The route's `s-maxage=3600` policy explains the permitted Netlify reuse. A local revalidation-header fix is awaiting deployment and hosted proof. |
 | Production feed/image/storage loop | Owner exported CSV through the UI; prior agent reported 31 rows, valid versioned image URLs, a 1080×1080 PNG and matching R2 object. Attribution is retained; this handoff did not repeat that export or R2 download. |
 | CDN versus R2 reuse | This task independently observed a durable CDN hit replaying the original miss marker and a fresh CDN variant reaching the R2-hit branch with identical bytes. See the [cache investigation](../../slices/external-render-service/notes/2026-09-07-netlify-cache-query-isolation.md). |
 | Deployed query isolation and follow-up cache checks | Owner states the suggested deployment/cache verification is complete. The original blocker is resolved on that confirmation. Raw post-fix headers and deployment identifier were not supplied in this task; do not label them independently captured evidence. |
@@ -31,4 +36,4 @@ The full Reliable Catalog source matrix and manual Meta acceptance remain owned 
 
 ## Remaining release work
 
-Review hosting/retirement handoffs, validate backward compatibility before deploying the parallel publication changes, and capture hosted failure/recovery evidence plus a release-specific usage delta. Team allowance evidence and projection are recorded in the September 8 note; they do not substitute for a release-run delta. No new application deployment was performed.
+Deploy the stable-feed revalidation correction, then rerun same-URL republish, old-image survival, four-placement dimensions, hosted failure/recovery, browser evidence, and a release-specific usage delta. Team allowance evidence and projection are recorded in the September 8 note; they do not substitute for a release-run delta. Manual Meta acceptance remains separate.

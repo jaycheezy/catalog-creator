@@ -112,10 +112,10 @@ describe("draft feed review fixes", () => {
     expect(await image.text()).toContain("10.00 EUR");
   });
 
-  it("uses public caching for anonymous published feeds", async () => {
+  it("revalidates the stable published project feed on every fetch", async () => {
     authenticated = false;
     const response = await feed(request(false));
     expect(response.status).toBe(200);
-    expect(response.headers.get("Cache-Control")).toBe("public, s-maxage=3600, stale-while-revalidate=600");
+    expect(response.headers.get("Cache-Control")).toBe("public, max-age=0, must-revalidate");
   });
 });

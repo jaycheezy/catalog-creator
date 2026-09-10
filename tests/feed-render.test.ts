@@ -60,6 +60,7 @@ describe("feed → exact variant render", () => {
   it("renders each feed row's title, price, and image for variants sharing a handle", async () => {
     const response = await feed(feedRequest());
     expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("public, s-maxage=3600, stale-while-revalidate=600");
     expect(upstreamPaths).toContain("/cart.js");
     const csv = await response.text();
     expect(csv.split("\n")[0]).not.toContain("source_id");

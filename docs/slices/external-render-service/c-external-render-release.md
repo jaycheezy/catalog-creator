@@ -57,6 +57,8 @@ Report the final architecture, deployment identifiers, smoke results, cache evid
 
 ## Progress
 
+- 2026-09-10 — Production verification began against ready Netlify deploy `6aa2fe6d9942ce0008928f2d`, whose commit exactly matched the clean reviewed checkout. An isolated 75-row CHF/sale project passed authentication, import, four-placement save, first publish, anonymous feed/render, R2-reuse, query-isolation, draft-isolation, update-save and update-publish assertions. The run then found that the unchanged feed URL still served the prior CSV/image URL because the route granted Netlify a one-hour shared-cache TTL. The focused correction and full gate pass locally (23 files / 152 tests, typecheck, 0 lint warnings, Next and OpenNext/Cloudflare builds), but the release stays `proposed` until redeploy and a complete rerun. See [the stable-feed blocker](notes/2026-09-10-netlify-stable-feed-staleness.md).
+
 - 2026-09-06 — Specification review aligned this story with the current three raster call sites, private-draft cache bypass and v2 render identity. No implementation or new runtime proof is claimed. See [the contract review note](notes/2026-09-06-external-render-contract-review.md).
 
 - 2026-09-06 — Use the [complementary local proof and hosting corrections](notes/2026-09-06-native-next-local-benchmark.md) with the parallel spike proposal: native Next pixel parity passed locally; the Netlify buffered candidate uses a 4 MiB PNG cap and current credit-based pricing. Hosted cold starts, safe remote-image handling, actual Free Worker CPU and quota behavior remain separate gates. No readiness promotion follows from the local benchmark.

@@ -1,7 +1,7 @@
 # Reliable Catalog workflow evidence
 
 Evidence date: 2026-09-10  
-Working-tree base: `53b3bf07486e36ea769c25472ab074e241d4aa90`  
+Deployed baseline commit: `d36c377cef13c5bae80349aaac45e31c2b812349`
 Production host: `https://cataloghog.netlify.app`
 
 This index separates repeatable application checks, local runtime evidence, deployed-host evidence, and manual external acceptance. Capability IDs, cookies, credentials, private source URLs, and complete feed/image URLs are intentionally omitted.
@@ -20,7 +20,7 @@ This index separates repeatable application checks, local runtime evidence, depl
 | Save failure | Aggregate failure returns retryable 503 without advancing; a later compatibility-mirror failure keeps the confirmed aggregate revision successful | `tests/placementExports.test.ts`, `tests/projects.test.ts`, `tests/durableSaves.test.ts` | Automated |
 | Publish/reopen/update | Exact revision guard, skipped invalid rows, stable feed URL, private draft, failed republish preservation, reopen summary, new immutable URL and old-byte survival | `tests/publication.test.ts`, `tests/publicationStore.test.ts`, `tests/versionedRenders.test.ts` | Automated |
 | Local R2 runtime | OpenNext/Workerd create → publish → reopen → anonymous feed; concurrent same-revision publish is idempotent; PNG is byte-identical across `miss` → `hit` | [publication review evidence](../slices/reliable-catalog/notes/2026-09-06-render-publication-review-fixes.md) | Verified locally |
-| Netlify/R2 | Production PNG and query isolation verified on deploy `6a9f0dd706a33b0008cf9f48`; Worker retired while R2/code remain | [Netlify release ledger](external-render-service/release.md), [retirement evidence](../slices/external-render-service/notes/2026-09-08-worker-retirement.md) | Verified baseline |
+| Netlify/R2 | Deploy `6aa2fe6d9942ce0008928f2d` matched the reviewed commit and the isolated 75-row run reached successful republish, but the stable feed remained on the prior CDN-cached CSV/image URL | [stable-feed blocker](../slices/external-render-service/notes/2026-09-10-netlify-stable-feed-staleness.md), [Netlify release ledger](external-render-service/release.md) | Blocked pending redeploy |
 | Desktop/narrow editor | A 75-row CHF/sale CSV completed save → four placements → publish → reopen → dirty-state block → republish; anonymous images had exact dimensions, stable repeat bytes and a changed immutable URL after a visible edit; controls remained usable at 390×844 | [local browser response artifact](evidence/reliable-catalog/local-browser-2026-09-10.md) | Verified locally |
 | Manual Meta import | Stable anonymous feed must be added as a Meta catalog data source and the sanitized accepted/rejected item result recorded | — | Outstanding external action |
 
@@ -46,7 +46,7 @@ The consolidated check generates and validates the story map, runs all Vitest fi
 Results on 2026-09-10:
 
 - `npm run check`: 23 files / 152 tests passed; typecheck and lint passed without warnings.
-- `npm run build`: passed; 96 static paths generated.
+- `npm run build`: passed; 97 static paths generated.
 - `npm run cf:build`: passed with the retained OpenNext warning that Node.js middleware support on Cloudflare is experimental.
 - `git diff --check`: passed.
 
@@ -54,6 +54,6 @@ The isolated browser run used the compiled application because another Next deve
 
 ## Remaining release evidence
 
-The reviewed working tree must be deployed to Netlify before production results can be attributed to these publication, XML, decimal-validation, mirror-recovery, and browser-verified workflow changes. After deployment, capture anonymous feed/PNG headers, cache behavior, old-asset survival, and hosted failure/recovery using the [operations runbook](external-render-service/runbook.md). The local desktop/narrow journey does not substitute for that hosted evidence.
+The reviewed baseline was deployed, but the first complete production run found that the stable project feed could remain stale for an hour after republish. Deploy the local revalidation-header correction, then capture anonymous feed/PNG headers, same-URL update behavior, old-asset survival, and hosted failure/recovery using the [operations runbook](external-render-service/runbook.md). The local desktop/narrow journey does not substitute for that hosted evidence.
 
 The manual Meta step requires an authorized Meta catalog session and a disposable or approved catalog. Record only the date, Netlify deploy ID, item count, accepted/rejected outcome, and sanitized diagnostic codes.
