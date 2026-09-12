@@ -12,6 +12,8 @@ export async function proxy(req: NextRequest) {
   if (
     pathname === "/login" ||
     pathname.startsWith("/login/") ||
+    pathname === "/phone-lab" ||
+    pathname.startsWith("/phone-lab/") ||
     pathname === "/api/login" ||
     pathname === "/api/feed" ||
     pathname === "/api/render" ||

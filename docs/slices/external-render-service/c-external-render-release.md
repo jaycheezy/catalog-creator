@@ -3,7 +3,7 @@ id: "c-external-render-release"
 slice: "external-render-service"
 title: "Prove production on Netlify end to end"
 step: "test"
-status: "proposed"
+status: "done"
 effort: "M"
 order: 4
 tags: ["netlify", "meta", "release"]
@@ -56,6 +56,12 @@ Run `npm run story-map:check`, the application test/typecheck/lint/build command
 Report the final architecture, deployment identifiers, smoke results, cache evidence, usage consumption, remaining limitations, runbook location, and follow-up work. Move to `in-review`; mark the slice complete only after the release evidence is independently reviewable.
 
 ## Progress
+
+- 2026-09-11 — Independent review accepted the complete production evidence after the authorized Commerce Manager check also succeeded. The reviewed deploy now has direct evidence for anonymous publication, four placements, stable-feed freshness, CDN and origin R2 reuse, revision isolation, historical asset survival, private drafts, bounded application and credential failures with recovery, browser behavior, Free Legacy usage, and an external Meta import with 30 accepted rows and no failures or issues. Story moved to `done`; the shared evidence and runbook remain the operational handoff.
+
+- 2026-09-11 — Completed the final provider failure matrix against the reviewed production build and S3-compatible R2 adapter in an isolated `next start` process with local fallback disabled. Invalid credentials produced retryable 503 responses for an unknown feed (79 ms), versioned render (311 ms), and template read (115 ms). An already issued immutable image first returned a 200 R2 hit at 1,246,266 bytes/hash `98505fbcfcdb9e68`, followed the documented publication-read 503 path in 208 ms during the outage, then recovered as an R2 hit with identical bytes/hash. Production GET checks before and after retained the same 30-row feed and image hashes. Shared Netlify credentials, publication records, and existing immutable objects were not changed. The [sanitized evidence](../../research/evidence/external-render-service/netlify-production-2026-09-10.md) is complete, so this story moves to `in-review`.
+
+- 2026-09-10 — The corrected production matrix passes on Netlify deploy `6aa303eed8f0140008f61cf6` / commit `622cf2f`: 75-row CHF/sale import, four-placement save, anonymous publication, immediate same-URL republish, changed pixels/identity, old-image survival, Netlify Edge hit, origin R2 hit, full query isolation, private draft branches, 422 failure preservation/recovery, reopen, and exact four-placement dimensions. Production browser inspection showed the live catalog home, restored editor project, feed copy/download and republish controls, all sizes, and the unclipped representative result with no console warnings/errors. Authenticated usage records the Free Legacy plan, current totals, two September 10 deploys using three build minutes, and a projection below the displayed bandwidth/build allowances. The [sanitized evidence](../../research/evidence/external-render-service/netlify-production-2026-09-10.md) resolves the stable-feed blocker. At this checkpoint only isolated real R2-outage behavior remained; the September 11 entry closes it. Manual Meta acceptance stayed with the workflow story and completed separately on September 11.
 
 - 2026-09-10 — Production verification began against ready Netlify deploy `6aa2fe6d9942ce0008928f2d`, whose commit exactly matched the clean reviewed checkout. An isolated 75-row CHF/sale project passed authentication, import, four-placement save, first publish, anonymous feed/render, R2-reuse, query-isolation, draft-isolation, update-save and update-publish assertions. The run then found that the unchanged feed URL still served the prior CSV/image URL because the route granted Netlify a one-hour shared-cache TTL. The focused correction and full gate pass locally (23 files / 152 tests, typecheck, 0 lint warnings, Next and OpenNext/Cloudflare builds), but the release stays `proposed` until redeploy and a complete rerun. See [the stable-feed blocker](notes/2026-09-10-netlify-stable-feed-staleness.md).
 

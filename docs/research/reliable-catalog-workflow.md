@@ -1,7 +1,8 @@
 # Reliable Catalog workflow evidence
 
-Evidence date: 2026-09-10  
-Deployed baseline commit: `d36c377cef13c5bae80349aaac45e31c2b812349`
+Evidence date: 2026-09-11
+
+Deployed commit: `622cf2f52bd304498f8ef4285ac0f99410030631`
 Production host: `https://cataloghog.netlify.app`
 
 This index separates repeatable application checks, local runtime evidence, deployed-host evidence, and manual external acceptance. Capability IDs, cookies, credentials, private source URLs, and complete feed/image URLs are intentionally omitted.
@@ -20,9 +21,9 @@ This index separates repeatable application checks, local runtime evidence, depl
 | Save failure | Aggregate failure returns retryable 503 without advancing; a later compatibility-mirror failure keeps the confirmed aggregate revision successful | `tests/placementExports.test.ts`, `tests/projects.test.ts`, `tests/durableSaves.test.ts` | Automated |
 | Publish/reopen/update | Exact revision guard, skipped invalid rows, stable feed URL, private draft, failed republish preservation, reopen summary, new immutable URL and old-byte survival | `tests/publication.test.ts`, `tests/publicationStore.test.ts`, `tests/versionedRenders.test.ts` | Automated |
 | Local R2 runtime | OpenNext/Workerd create → publish → reopen → anonymous feed; concurrent same-revision publish is idempotent; PNG is byte-identical across `miss` → `hit` | [publication review evidence](../slices/reliable-catalog/notes/2026-09-06-render-publication-review-fixes.md) | Verified locally |
-| Netlify/R2 | Deploy `6aa2fe6d9942ce0008928f2d` matched the reviewed commit and the isolated 75-row run reached successful republish, but the stable feed remained on the prior CDN-cached CSV/image URL | [stable-feed blocker](../slices/external-render-service/notes/2026-09-10-netlify-stable-feed-staleness.md), [Netlify release ledger](external-render-service/release.md) | Blocked pending redeploy |
+| Netlify/R2 | Deploy `6aa303eed8f0140008f61cf6` completed the 75-row publish/reopen/update journey: non-stale stable feed, changed and historical PNGs, Edge and origin R2 reuse, isolation, private drafts, failure recovery, browser controls, and exact placement dimensions. The same production build and adapter also passed isolated invalid-credential failure/recovery with unchanged production hashes. | [production and isolated-outage artifact](evidence/external-render-service/netlify-production-2026-09-10.md), [Netlify release ledger](external-render-service/release.md) | Verified |
 | Desktop/narrow editor | A 75-row CHF/sale CSV completed save → four placements → publish → reopen → dirty-state block → republish; anonymous images had exact dimensions, stable repeat bytes and a changed immutable URL after a visible edit; controls remained usable at 390×844 | [local browser response artifact](evidence/reliable-catalog/local-browser-2026-09-10.md) | Verified locally |
-| Manual Meta import | Stable anonymous feed must be added as a Meta catalog data source and the sanitized accepted/rejected item result recorded | — | Outstanding external action |
+| Manual Meta import | The stable anonymous feed updated an authorized Commerce Manager data source on a daily EUR schedule; Meta accepted all 30 incoming rows, removed 0, failed 0, and reported 0 issues | [sanitized Meta acceptance](evidence/reliable-catalog/meta-import-2026-09-11.md) | Verified externally |
 
 ## Failure and recovery contract
 
@@ -52,8 +53,8 @@ Results on 2026-09-10:
 
 The isolated browser run used the compiled application because another Next development process held the repository's dev lock. It verified the 75-row import, desktop and 390×844 controls, save/publish/reopen/update state, four exact placement dimensions, anonymous feed/image access, repeat-byte stability, changed image identity and pixels after a visible edit, and prior-image survival. See the [sanitized response artifact](evidence/reliable-catalog/local-browser-2026-09-10.md).
 
-## Remaining release evidence
+## Completion status
 
-The reviewed baseline was deployed, but the first complete production run found that the stable project feed could remain stale for an hour after republish. Deploy the local revalidation-header correction, then capture anonymous feed/PNG headers, same-URL update behavior, old-asset survival, and hosted failure/recovery using the [operations runbook](external-render-service/runbook.md). The local desktop/narrow journey does not substitute for that hosted evidence.
+The corrected application path is verified on Netlify, including same-URL freshness, cache layers, image survival, query/draft isolation, application-level failure recovery, four placements, reopen, browser output, and Free Legacy usage/capacity evidence. Independent review accepted the external-render release, including its isolated invalid-credential failure/recovery evidence; all stories in that slice are now `done`.
 
-The manual Meta step requires an authorized Meta catalog session and a disposable or approved catalog. Record only the date, Netlify deploy ID, item count, accepted/rejected outcome, and sanitized diagnostic codes.
+The authorized Meta acceptance completed on 2026-09-11. Commerce Manager updated or added all 30 incoming products, removed 0, failed 0, and reported 0 issues while retaining one prior product through the selected non-deleting update mode. Every workflow acceptance row now has direct evidence.

@@ -15,21 +15,6 @@ const STATUS_DOT: Record<StoryStatus, string> = {
   done: 'bg-emerald-500',
   'wont-do': 'bg-white ring-1 ring-inset ring-slate-400',
 };
-const CARD_VARIANTS = {
-  studio: 'Studio',
-  ribbon: 'Ribbon',
-  compact: 'Compact',
-} as const;
-type CardVariant = keyof typeof CARD_VARIANTS;
-const CARD_VARIANT_IDS = Object.keys(CARD_VARIANTS) as CardVariant[];
-function statusRail(story: Story, stories: Story[]) {
-  if (story.status === 'done') return 'border-l-emerald-400';
-  if (story.status === 'wont-do') return 'border-l-slate-300';
-  if (isReady(story, stories)) return 'border-l-indigo-500';
-  if (story.status === 'in-progress') return 'border-l-amber-400';
-  if (story.status === 'in-review') return 'border-l-sky-400';
-  return 'border-l-slate-300';
-}
 function StoryValue({ story }: { story: Story }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -144,9 +129,8 @@ function StoryStatusMenu({ story, stories, saving, onSelect }: { story: Story; s
     </div>, document.body)}
   </>;
 }
-export function StoryCard({ story, stories, variant, dimmed, saving, savingKind, onDragStart, onDragEnd, onStatusSelect }: { story: Story;
+export function StoryCard({ story, stories, dimmed, saving, savingKind, onDragStart, onDragEnd, onStatusSelect }: { story: Story;
   stories: Story[];
-  variant: CardVariant;
   dimmed: boolean;
   saving: boolean;
   savingKind: 'move' | 'status' | null;
@@ -155,24 +139,19 @@ export function StoryCard({ story, stories, variant, dimmed, saving, savingKind,
   onStatusSelect: (status: StoryStatus) => void;
 }) {
   const blocked = unmetDependencies(story, stories);
-  const compact = variant === 'compact';
   return <article
     id={story.id}
     draggable
     title="Drag to move to another column or slice"
     onDragStart={onDragStart}
     onDragEnd={onDragEnd}
-    className={`relative scroll-mt-40 cursor-grab bg-white transition active:cursor-grabbing ${dimmed ? 'opacity-50' : ''} ${variant === 'ribbon'
-      ? `rounded-xl border border-slate-900/10 border-l-4 ${statusRail(story, stories)} p-3.5 shadow-[0_1px_2px_rgba(16,24,40,0.06)] hover:-translate-y-px hover:shadow-[0_8px_20px_-8px_rgba(99,91,255,0.35)]`
-      : compact
-        ? 'rounded-lg border border-slate-900/10 p-2.5 shadow-[0_1px_2px_rgba(16,24,40,0.06)] hover:border-indigo-200 hover:shadow-[0_6px_16px_-8px_rgba(99,91,255,0.4)]'
-        : 'rounded-xl border border-slate-900/10 p-3.5 shadow-[0_1px_2px_rgba(16,24,40,0.06)] hover:-translate-y-px hover:shadow-[0_8px_20px_-8px_rgba(99,91,255,0.35)]'}`}
+    className={`relative scroll-mt-40 cursor-grab bg-white transition active:cursor-grabbing ${dimmed ? 'opacity-50' : ''} rounded-lg border border-slate-900/10 p-2.5 shadow-[0_1px_2px_rgba(16,24,40,0.06)] hover:border-indigo-200 hover:shadow-[0_6px_16px_-8px_rgba(99,91,255,0.4)]`}
   >
-    <div className={`flex items-start gap-2 ${compact ? 'mb-1.5 text-[10px]' : 'mb-2 text-[11px]'}`}><StoryStatusMenu story={story} stories={stories} saving={saving} onSelect={onStatusSelect} /><span className="py-1 font-medium text-slate-400">{story.effort}</span><StoryValue story={story} /></div>
-    <h4 className={`font-bold leading-snug tracking-tight text-slate-900 ${compact ? 'text-[13px]' : variant === 'ribbon' ? 'text-[15px]' : 'text-sm'}`}>{story.title}</h4>
-    <p className={`mt-1.5 leading-relaxed text-slate-500 ${compact ? 'line-clamp-2 text-[11px]' : 'text-xs'}`}>{story.description}</p>
+    <div className="flex items-start gap-2 mb-1.5 text-[10px]"><StoryStatusMenu story={story} stories={stories} saving={saving} onSelect={onStatusSelect} /><span className="py-1 font-medium text-slate-400">{story.effort}</span><StoryValue story={story} /></div>
+    <h4 className="font-bold leading-snug tracking-tight text-slate-900 text-[13px]">{story.title}</h4>
+    <p className="mt-1.5 leading-relaxed text-slate-500 line-clamp-2 text-[11px]">{story.description}</p>
     {saving && <p role="status" className="mt-2 text-[11px] font-semibold text-indigo-600">{savingKind === 'status' ? 'Saving status…' : 'Saving move…'}</p>}
-    {story.acceptance.length > 0 && <details className={`group ${compact ? 'mt-2' : 'mt-3'}`}>
+    {story.acceptance.length > 0 && <details className="group mt-2">
       <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 ring-1 ring-inset ring-slate-900/5 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-indigo-600 [&::-webkit-details-marker]:hidden">
         <svg viewBox="0 0 12 12" aria-hidden className="h-3 w-3 shrink-0 text-slate-400 transition-transform group-open:rotate-90" fill="none"><path d="M4.5 3 7.5 6 4.5 9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
         Acceptance criteria
@@ -181,15 +160,13 @@ export function StoryCard({ story, stories, variant, dimmed, saving, savingKind,
       <ul className="mt-1.5 space-y-1.5 px-1 pb-0.5">{story.acceptance.map(a => <li key={a} className="flex gap-2 text-[11px] leading-relaxed text-slate-500"><span aria-hidden className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-slate-300" /><span>{a}</span></li>)}</ul>
     </details>}
     {story.implementation === 'outline' && <p className="mt-3 inline-block rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-500">Spec outline · refine before assigning</p>}
-    {blocked.length > 0 && <div className={`rounded-lg border border-amber-200/70 bg-amber-50 text-amber-800 ${compact ? 'mt-2 p-2 text-[11px]' : 'mt-3 p-2.5 text-xs'}`}><p className="font-semibold">Waiting on {blocked.length} {blocked.length === 1 ? 'story' : 'stories'}</p>{blocked.map(id => { const dependency = stories.find(item => item.id === id)!; return <Link key={id} href={storyUrl(dependency)} className="mt-1 block underline underline-offset-2 hover:text-amber-950">{dependency.title}</Link>; })}</div>}
-    {variant === 'ribbon'
-      ? <Link href={storyUrl(story)} className="mt-3 flex items-center justify-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100">View implementation spec <span aria-hidden>→</span></Link>
-      : <Link href={storyUrl(story)} className={`inline-block font-bold text-indigo-700 underline-offset-4 hover:text-indigo-900 hover:underline ${compact ? 'mt-2.5 text-[11px]' : 'mt-3.5 text-xs'}`}>View implementation spec →</Link>}
+    {blocked.length > 0 && <div className="rounded-lg border border-amber-200/70 bg-amber-50 text-amber-800 mt-2 p-2 text-[11px]"><p className="font-semibold">Waiting on {blocked.length} {blocked.length === 1 ? 'story' : 'stories'}</p>{blocked.map(id => { const dependency = stories.find(item => item.id === id)!; return <Link key={id} href={storyUrl(dependency)} className="mt-1 block underline underline-offset-2 hover:text-amber-950">{dependency.title}</Link>; })}</div>}
+    <Link href={storyUrl(story)} className="inline-block font-bold text-indigo-700 underline-offset-4 hover:text-indigo-900 hover:underline mt-2.5 text-[11px]">View implementation spec →</Link>
   </article>;
 }
 export function StoryMap({ stories: initialStories, slices }: { stories: Story[]; slices: Slice[] }) {
-  const [view, setView] = useState({ step: 'all', sliceFilter: 'all', readyOnly: false, cardStyle: 'studio' as CardVariant, restored: false });
-  const { step, sliceFilter, readyOnly, cardStyle, restored } = view;
+  const [view, setView] = useState({ step: 'all', sliceFilter: 'all', readyOnly: false, restored: false });
+  const { step, sliceFilter, readyOnly, restored } = view;
   const [stories, setStories] = useState(initialStories);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overCell, setOverCell] = useState<string | null>(null);
@@ -202,24 +179,31 @@ export function StoryMap({ stories: initialStories, slices }: { stories: Story[]
   const setStep = (step: string) => setView(previous => ({ ...previous, step }));
   const setSliceFilter = (sliceFilter: string) => setView(previous => ({ ...previous, sliceFilter }));
   const setReadyOnly = (readyOnly: boolean) => setView(previous => ({ ...previous, readyOnly }));
-  const setCardStyle = (cardStyle: CardVariant) => setView(previous => ({ ...previous, cardStyle }));
   useEffect(() => {
-    const next = { step: 'all', sliceFilter: 'all', readyOnly: false, cardStyle: 'studio' as CardVariant, restored: true };
+    const next = { step: 'all', sliceFilter: 'all', readyOnly: false, restored: true };
     try {
       const saved = JSON.parse(localStorage.getItem('catalog-forge-storymap-view-v2') || '{}');
       if (saved.step === 'all' || steps.some(item => item.id === saved.step)) next.step = saved.step;
       if (saved.slice === 'all' || slices.some(item => item.id === saved.slice)) next.sliceFilter = saved.slice;
       next.readyOnly = saved.readyOnly === true;
-      if (CARD_VARIANT_IDS.includes(saved.cardStyle)) next.cardStyle = saved.cardStyle;
     } catch { /* Invalid preferences never replace repository content. */ }
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Restore browser-only preferences after hydration; shared story data is never restored from storage.
     setView(next);
   }, [slices]);
   useEffect(() => {
-    if (restored) try { localStorage.setItem('catalog-forge-storymap-view-v2', JSON.stringify({ step, slice: sliceFilter, readyOnly, cardStyle })); } catch { /* Optional preferences. */ }
-  }, [step, sliceFilter, readyOnly, cardStyle, restored]);
+    if (restored) try { localStorage.setItem('catalog-forge-storymap-view-v2', JSON.stringify({ step, slice: sliceFilter, readyOnly })); } catch { /* Optional preferences. */ }
+  }, [step, sliceFilter, readyOnly, restored]);
+  const isTerminalStatus = (status: StoryStatus) => status === 'done' || status === 'wont-do';
+  const sliceTerminalCount = (sliceId: string) => stories.filter(s => s.slice === sliceId && isTerminalStatus(s.status)).length;
+  const sliceTotalCount = (sliceId: string) => stories.filter(s => s.slice === sliceId).length;
+  const isFinishedSlice = (sliceId: string) => {
+    const total = sliceTotalCount(sliceId);
+    return total > 0 && sliceTerminalCount(sliceId) === total;
+  };
   const shownSteps = steps.filter(item => step === 'all' || item.id === step);
-  const shownSlices = slices.filter(item => sliceFilter === 'all' || item.id === sliceFilter);
+  const shownSlices = slices
+    .filter(item => sliceFilter === 'all' || item.id === sliceFilter)
+    .sort((a, b) => Number(isFinishedSlice(b.id)) - Number(isFinishedSlice(a.id)) || a.order - b.order || a.id.localeCompare(b.id));
   const visibleStories = stories.filter(item => (step === 'all' || item.step === step) && (sliceFilter === 'all' || item.slice === sliceFilter) && (!readyOnly || isReady(item, stories)));
   const columns = { gridTemplateColumns: `200px repeat(${shownSteps.length}, minmax(230px, 1fr))` };
   async function moveStory(storyId: string, sliceId: string, stepId: string) {
@@ -289,13 +273,7 @@ export function StoryMap({ stories: initialStories, slices }: { stories: Story[]
     if (headerScrollRef.current) headerScrollRef.current.scrollLeft = 0;
     if (bodyScrollRef.current) bodyScrollRef.current.scrollLeft = 0;
   }, [step, sliceFilter, shownSteps.length]);
-  const isTerminalStatus = (status: StoryStatus) => status === 'done' || status === 'wont-do';
-  const sliceTerminalCount = (sliceId: string) => stories.filter(s => s.slice === sliceId && isTerminalStatus(s.status)).length;
-  const sliceTotalCount = (sliceId: string) => stories.filter(s => s.slice === sliceId).length;
-  const defaultCollapsed = (sliceId: string) => {
-    const total = sliceTotalCount(sliceId);
-    return total > 0 && sliceTerminalCount(sliceId) === total;
-  };
+  const defaultCollapsed = (sliceId: string) => isFinishedSlice(sliceId);
   const isCollapsed = (sliceId: string) => collapsedOverrides[sliceId] ?? defaultCollapsed(sliceId);
   return <div className="min-h-screen bg-[#f6f9fc] text-slate-900 antialiased">
     <header className="sticky top-0 z-30 border-b border-slate-900/10 bg-white/80 backdrop-blur-md"><div className="mx-auto flex h-14 w-full max-w-[1800px] items-center gap-3 px-5">
@@ -308,14 +286,6 @@ export function StoryMap({ stories: initialStories, slices }: { stories: Story[]
         <label className="flex items-center gap-2 font-medium text-slate-600">Journey step<select value={step} onChange={e => setStep(e.target.value)} className="max-w-56 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-800 shadow-sm transition focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"><option value="all">All steps</option>{steps.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></label>
         <label className="flex items-center gap-2 font-medium text-slate-600">Slice<select value={sliceFilter} onChange={e => setSliceFilter(e.target.value)} className="max-w-64 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-800 shadow-sm transition focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"><option value="all">All slices</option>{slices.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></label>
         <label className="flex cursor-pointer items-center gap-2 font-medium text-slate-600"><input type="checkbox" checked={readyOnly} onChange={e => setReadyOnly(e.target.checked)} className="h-4 w-4 rounded accent-indigo-600" />Ready to assign</label>
-        <div className="flex items-center gap-2 font-medium text-slate-600">Cards<span role="group" aria-label="Card style" className="flex items-center gap-0.5 rounded-lg bg-slate-100 p-1">{CARD_VARIANT_IDS.map(variant => <button
-          key={variant}
-          type="button"
-          aria-pressed={cardStyle === variant}
-          title={`${CARD_VARIANTS[variant]} cards`}
-          onClick={() => setCardStyle(variant)}
-          className={`rounded-md px-2.5 py-1 text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-indigo-600 ${cardStyle === variant ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-900/10' : 'text-slate-500 hover:text-slate-800'}`}
-        >{CARD_VARIANTS[variant]}</button>)}</span></div>
         <button className="text-xs font-medium text-slate-400 underline underline-offset-4 transition hover:text-slate-700" onClick={() => { setStep('all'); setSliceFilter('all'); setReadyOnly(false); }}>Clear filters</button>
         <span role="status" className="ml-auto rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">{visibleStories.length} stories shown</span>
       </div>
@@ -372,7 +342,6 @@ export function StoryMap({ stories: initialStories, slices }: { stories: Story[]
                 key={story.id}
                 story={story}
                 stories={stories}
-                variant={cardStyle}
                 dimmed={dragId === story.id}
                 saving={savingId === story.id}
                 savingKind={savingKind}

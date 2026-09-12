@@ -3,7 +3,7 @@ id: "c-agent-catalog-inspection"
 slice: "agent-assisted-workspace"
 title: "A3 · Find products and explain feed issues"
 step: "validate"
-status: "proposed"
+status: "done"
 effort: "M"
 order: 2
 tags: []
@@ -45,3 +45,13 @@ Use fixtures for more than 50 rows with an invalid late row, two variants with t
 ## Completion handoff
 
 Report changed files, decisions and interface changes, checks run with results, and evidence against every acceptance criterion. Identify limitations and follow-ups. Update this story to in-review when implementation and required evidence are ready; do not mark dependent stories complete. A blocker belongs in Progress with a concrete prerequisite.
+
+## Progress
+
+- 2026-09-12 — Review accepted through continuation into A4; moved to `done`. A4 consumes the same current catalog snapshot for stable product selection and leaves product records, validation and upstream sources unchanged.
+
+- 2026-09-12 — Implementation complete; moved to `in-review`. Added pure read-only catalog queries over the editor's loaded saved `FeedRow[]` snapshot and existing `CatalogValidationResult`. `catalog_forge_query_products` supports exact source IDs, free text, issue code, sale status, title-length ordering with a stable source-ID tie break, requested field projection, default pages of 20 and a maximum of 50. `catalog_forge_get_validation` always returns the full saved-snapshot summary while paging either grouped findings or affected source references. No new catalog model, upstream refresh, product mutation or design-to-source repair inference was introduced.
+
+- 2026-09-12 — Inputs are checked at runtime against the advertised allowlist. Product content is bounded and marked as untrusted source data. Unknown source IDs and issue codes fail explicitly. Opaque cursors are bound to mode, session, project, saved project revision and normalized query, so reuse after a query, session or snapshot change fails instead of silently paging a different result. Incomplete import and unverified image checks remain explicit; issue remediation is identified as source data.
+
+- 2026-09-12 — Focused fixtures cover 60 products, two variants with one product handle, equal-length long titles, a sale, incomplete import, missing image data and an invalid price at row 56. Unit/integration coverage verifies stable paging, bounds, field projection, late-row lookup, stale cursors, validation totals, affected-ID paging, immutability and all three read-only WebMCP registrations. Real Codex In-app Browser verification discovered the production tools in a loaded project, found the row-56 price failure, paged all 60 unverified-image references as 50 + 10 without changing summary totals, found the one sale, used stable long-title ordering and rejected a cursor reused with another query. The disposable fixture was removed and the normal local server restored. The full gate passed: 25 test files / 165 tests, typecheck, lint with zero warnings, and the production build with 98 static pages.

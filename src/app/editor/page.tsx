@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useCallback, useEffect, useState, useMemo, useReducer, useRef } from "react";
 import "@fontsource/inter/400.css";
 import "@fontsource/inter/600.css";
 import "@fontsource/inter/700.css";
@@ -27,13 +27,28 @@ import {
 } from "@/editor/placementState";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { CatalogValidationResult } from "@/lib/catalogValidation";
+import { validateCatalog, type CatalogValidationResult } from "@/lib/catalogValidation";
 import { isTemplateSaved, templateFingerprint, type SavedTemplateRecord } from "@/editor/saveState";
 import { hasUnsavedPublicationDesign } from "@/editor/publicationState";
 import { WebmcpSpike } from "@/components/WebmcpSpike";
+import { AgentWorkspaceProvider } from "@/components/AgentWorkspaceProvider";
+import { AgentReviewGrid } from "@/components/AgentReviewGrid";
+import { AGENT_WORKSPACE_TOOL_NAMES } from "@/agent/tools";
+import type { WorkspaceCatalogSnapshot } from "@/agent/catalogQueries";
+import {
+  workspaceCapabilities,
+  workspaceSourceSummary,
+  type WorkspaceContextSnapshot,
+  type WorkspaceDesignSnapshot,
+  type WorkspaceDraftTargetId,
+  type WorkspaceReviewState,
+  type WorkspaceViewChange,
+} from "@/workspace/contracts";
+import { INITIAL_WORKSPACE_REVISION, workspaceRevisionReducer } from "@/workspace/controller";
 
 const STORAGE_KEY = "catalog-forge-templates-v1";
 const DOMAIN_KEY = "catalog-forge-editor-domain";
+const AGENT_CAPABILITIES = workspaceCapabilities([...AGENT_WORKSPACE_TOOL_NAMES]);
 
 export default function EditorPage() {
   const router = useRouter();
@@ -47,6 +62,7 @@ export default function EditorPage() {
   }, []);
   const [projectPlacement, setProjectPlacement] = useState<CatalogProject["placement"]>("carousel");
   const [projectError, setProjectError] = useState<string | null>(null);
+  const [projectContext, setProjectContext] = useState<Pick<CatalogProject, "id" | "name" | "source" | "importStatus"> | null>(null);
   const [projectValidation, setProjectValidation] = useState<CatalogValidationResult | null>(null);
   const [templates, setTemplates] = useState<Template[]>(() => [createDefaultTemplate("1:1")]);
   const [activeId, setActiveId] = useState<string>(() => templates[0].id);
@@ -75,7 +91,15 @@ export default function EditorPage() {
     } | null;
   } | null | undefined>(undefined);
   const [projectRevision, setProjectRevision] = useState(0);
+  const [{ draftRevision, viewRevision }, dispatchWorkspaceRevision] = useReducer(
+    workspaceRevisionReducer,
+    INITIAL_WORKSPACE_REVISION,
+  );
+  const [showAllSizes, setShowAllSizes] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<{ message: string; retryable: boolean } | null>(null);
+  const [agentHighlightedLayerIds, setAgentHighlightedLayerIds] = useState<string[]>([]);
+  const [agentReview, setAgentReview] = useState<WorkspaceReviewState | null>(null);
   const exportRef = useRef<HTMLDivElement>(null);
 
   const active = useMemo(() => templates.find((t) => t.id === activeId) ?? templates[0], [templates, activeId]);
@@ -150,6 +174,7 @@ export default function EditorPage() {
       // Loading state tracks the external project fetch initiated by this effect.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setLoading(true);
+      setProjectError(null);
       fetch(`/api/projects?id=${encodeURIComponent(projectId)}`)
         .then(async (res) => {
           const json = await res.json() as CatalogProject & {
@@ -174,8 +199,12 @@ export default function EditorPage() {
           setProductIdx(0);
           setDomain(project.source.value);
           setProjectPlacement(project.placement);
+          setProjectContext({ id: project.id, name: project.name, source: project.source, importStatus: project.importStatus });
           setProjectValidation(project.validation ?? null);
           setProjectRevision(project.revision ?? 0);
+          dispatchWorkspaceRevision({ type: "reset" });
+          setAgentHighlightedLayerIds([]);
+          setAgentReview(null);
           setPublication(json.publication ?? null);
           setSavedTemplates({
             [project.template.id]: {
@@ -208,14 +237,21 @@ export default function EditorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
+  const markHumanDraftChange = () => {
+    setAgentHighlightedLayerIds([]);
+    setAgentReview(null);
+    dispatchWorkspaceRevision({ type: "draft-changed", actor: "human" });
+  };
+
   const updateActive = (patch: Partial<Template> | Template) => {
     setTemplates((prev) =>
       prev.map((t) => {
         if (t.id !== activeId) return t;
-        if ("layers" in patch && (patch as Template).layers) return patch as Template;
+        if ("layers" in patch && (patch as Template).layers) return { ...(patch as Template), updatedAt: Date.now() };
         return { ...t, ...patch, updatedAt: Date.now() } as Template;
       })
     );
+    markHumanDraftChange();
   };
 
   const updateLayer = (id: string, patch: Partial<Layer> | ((l: Layer) => Partial<Layer>)) => {
@@ -234,10 +270,31 @@ export default function EditorPage() {
             }
       )
     );
+    markHumanDraftChange();
   };
 
   const setProbeBackground = (background: string) => {
-    setTemplates((prev) => prev.map((t) => t.id === activeId ? { ...t, background, updatedAt: Date.now() } : t));
+    updateActive({ background });
+  };
+
+  const selectLayer = (id: string | null) => {
+    setSelectedId(id);
+    dispatchWorkspaceRevision({ type: "view-changed", actor: "human" });
+  };
+
+  const selectProduct = (index: number) => {
+    setProductIdx(index);
+    dispatchWorkspaceRevision({ type: "view-changed", actor: "human" });
+  };
+
+  const toggleAllSizes = () => {
+    if (agentReview) {
+      setAgentReview(null);
+      setShowAllSizes(false);
+    } else {
+      setShowAllSizes((visible) => !visible);
+    }
+    dispatchWorkspaceRevision({ type: "view-changed", actor: "human" });
   };
 
   const addLayer = (type: Layer["type"]) => {
@@ -262,7 +319,7 @@ export default function EditorPage() {
       content: type === "text" ? "Edit me — {{title}}" : type === "badge" ? "{{price}}" : undefined,
     };
     updateActive({ ...active, layers: [...active.layers, layer] });
-    setSelectedId(layer.id);
+    selectLayer(layer.id);
   };
 
   const duplicateLayer = (id: string) => {
@@ -274,7 +331,7 @@ export default function EditorPage() {
 
   const deleteLayer = (id: string) => {
     updateActive({ ...active, layers: active.layers.filter((l) => l.id !== id) });
-    if (selectedId === id) setSelectedId(null);
+    if (selectedId === id) selectLayer(null);
   };
 
   const changeSize = (sizeId: string) => {
@@ -293,7 +350,8 @@ export default function EditorPage() {
       .filter((template) => template.id !== variantDraftId(targetSize))
       .map((template) => (template.id === master.id ? promoted : template)));
     setActiveId(master.id);
-    setSelectedId(null);
+    selectLayer(null);
+    markHumanDraftChange();
   };
 
   const variantEntry = (sizeId: SizePresetId): Template | undefined =>
@@ -307,7 +365,7 @@ export default function EditorPage() {
     const existing = variantEntry(sizeId);
     if (existing) {
       setActiveId(existing.id);
-      setSelectedId(null);
+      selectLayer(null);
       return;
     }
     const preset = SIZE_PRESETS.find((p) => p.id === sizeId) ?? SIZE_PRESETS[0];
@@ -321,12 +379,12 @@ export default function EditorPage() {
       return [...prev, draft];
     });
     setActiveId(draftId);
-    setSelectedId(null);
+    selectLayer(null);
   };
 
   const backToMaster = () => {
     setActiveId(masterId);
-    setSelectedId(null);
+    selectLayer(null);
   };
 
   /**
@@ -343,11 +401,165 @@ export default function EditorPage() {
       return [...prev.filter((t) => t.id !== draftId), draft];
     });
     setActiveId(draftId);
-    setSelectedId(null);
+    selectLayer(null);
+    markHumanDraftChange();
   };
+  const agentWorkspaceContext = useMemo<Omit<WorkspaceContextSnapshot, "sessionId"> | null>(() => {
+    if (!projectId || !projectContext || projectContext.id !== projectId || publication === undefined) return null;
+    const activeTargetId: WorkspaceDraftTargetId = editingVariantSize ? `placement:${editingVariantSize}` : "master";
+    const activeSavedRevision = editingVariantSize
+      ? savedPlacements[editingVariantSize]?.revision ?? null
+      : savedTemplates[master.id]?.revision ?? null;
+    const placements = SIZE_PRESET_IDS.map((sizeId) => {
+      const entry = templates.find((template) => template.id === variantDraftId(sizeId));
+      const snapshot = placementSnapshots[sizeId];
+      const candidate = placementView(master, SIZE_PRESETS, sizeId, entry, snapshot);
+      const saved = savedPlacements[sizeId];
+      const targetId: WorkspaceDraftTargetId = sizeId === master.sizeId ? "master" : `placement:${sizeId}`;
+      const masterRecord = savedTemplates[master.id];
+      return {
+        sizeId,
+        targetId,
+        active: targetId === activeTargetId,
+        open: sizeId === master.sizeId || Boolean(entry),
+        saved: sizeId === master.sizeId
+          ? isTemplateSaved(master, masterRecord) || isPlacementSaved(master, SIZE_PRESETS, sizeId, saved?.fingerprint, candidate)
+          : isPlacementSaved(master, SIZE_PRESETS, sizeId, saved?.fingerprint, candidate),
+        savedRevision: sizeId === master.sizeId ? masterRecord?.revision ?? saved?.revision ?? null : saved?.revision ?? null,
+      };
+    });
+    const publishedRevision = publication?.active?.projectRevision ?? null;
+    const source = workspaceSourceSummary(projectContext.source);
+    return {
+      projectId,
+      draftRevision,
+      viewRevision,
+      data: {
+        busy: { loading, saving, publishing },
+        project: {
+          name: projectContext.name,
+          source: {
+            ...source,
+            currencyCodes: projectValidation?.currencyCodes ?? source.currencyCodes,
+          },
+          productCount: products.length,
+          totalProducts: projectContext.importStatus.totalProducts,
+          totalRows: projectContext.importStatus.totalRows,
+          importComplete: projectContext.importStatus.complete,
+          validation: {
+            status: projectValidation?.status ?? "unavailable",
+            errors: projectValidation?.errorCount ?? 0,
+            warnings: projectValidation?.warningCount ?? 0,
+            imageChecks: projectValidation?.imageChecks ?? "unavailable",
+          },
+        },
+        design: {
+          activeTargetId,
+          activeSizeId: active.sizeId as SizePresetId,
+          masterSizeId: master.sizeId as SizePresetId,
+          activeSaved: headerSaved,
+          dirty: publishBlockedByUnsavedDesign,
+          savedProjectRevision: projectRevision,
+          savedTemplateRevision: activeSavedRevision,
+          placements,
+        },
+        view: {
+          mode: showAllSizes ? "all-sizes" : "canvas",
+          selectedProductId: product?.source_id ?? product?.id ?? null,
+          selectedLayerId: selectedId,
+        },
+        publication: {
+          status: publication === null ? "unavailable" : publication.active ? "published" : "not-published",
+          publishedProjectRevision: publishedRevision,
+          draftNewer: publishedRevision !== null && projectRevision > publishedRevision,
+        },
+        agent: {
+          mutationsAvailable: true,
+          paused: false,
+          activityCount: 0,
+          canUndo: false,
+        },
+        capabilities: AGENT_CAPABILITIES,
+      },
+    };
+  }, [
+    active.sizeId,
+    draftRevision,
+    editingVariantSize,
+    headerSaved,
+    loading,
+    master,
+    placementSnapshots,
+    product,
+    products.length,
+    projectContext,
+    projectId,
+    projectRevision,
+    projectValidation,
+    publication,
+    publishing,
+    publishBlockedByUnsavedDesign,
+    savedPlacements,
+    savedTemplates,
+    saving,
+    selectedId,
+    showAllSizes,
+    templates,
+    viewRevision,
+  ]);
+  const agentCatalogSnapshot = useMemo<WorkspaceCatalogSnapshot | null>(() => {
+    if (!projectId || !projectContext || projectContext.id !== projectId) return null;
+    return {
+      projectId,
+      revision: projectRevision,
+      products,
+      validation: projectValidation ?? validateCatalog(products, {
+        importComplete: projectContext.importStatus.complete,
+        imageChecks: "not-run",
+      }),
+    };
+  }, [products, projectContext, projectId, projectRevision, projectValidation]);
+  const agentDesignSnapshot = useMemo<WorkspaceDesignSnapshot | null>(() => {
+    if (!agentWorkspaceContext) return null;
+    return { targetId: agentWorkspaceContext.data.design.activeTargetId, template: active };
+  }, [active, agentWorkspaceContext]);
 
-  const [showAllSizes, setShowAllSizes] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const applyAgentDesign = useCallback((
+    _targetId: WorkspaceDraftTargetId,
+    template: Template,
+    clearSelectedLayer: boolean,
+  ) => {
+    setAgentReview(null);
+    setTemplates((previous) => previous.map((entry) => entry.id === template.id ? template : entry));
+    if (clearSelectedLayer) {
+      setSelectedId(null);
+      dispatchWorkspaceRevision({ type: "view-changed", actor: "agent" });
+    }
+    dispatchWorkspaceRevision({ type: "draft-changed", actor: "agent" });
+    setSaveError(null);
+    setSaveNotice(null);
+  }, []);
+
+  const applyAgentView = useCallback((change: WorkspaceViewChange) => {
+    if (change.productIndex !== undefined) setProductIdx(change.productIndex);
+    if (change.layerId !== undefined) setSelectedId(change.layerId);
+    if (change.panel !== undefined) {
+      setAgentReview(null);
+      setShowAllSizes(change.panel === "all-sizes");
+    }
+    dispatchWorkspaceRevision({ type: "view-changed", actor: "agent" });
+  }, []);
+
+  const applyAgentPreview = useCallback((review: WorkspaceReviewState) => {
+    setAgentReview(review);
+    setShowAllSizes(true);
+    dispatchWorkspaceRevision({ type: "view-changed", actor: "agent" });
+  }, []);
+
+  const closeAgentReview = useCallback(() => {
+    setAgentReview(null);
+    dispatchWorkspaceRevision({ type: "view-changed", actor: "human" });
+  }, []);
   /**
    * Owner draft preview link (legacy render + explicit draft flag). Shared
    * feed URLs never carry the flag: anonymous readers always see the
@@ -759,20 +971,13 @@ export default function EditorPage() {
       return;
     }
     if (p.includes("dark") || p.includes("premium")) {
-      patch = { background: "#0a0a0a" } as Partial<Template>;
-      updateActive(patch as Template);
-      // make price badge white on dark
-      setTemplates((prev) =>
-        prev.map((t) =>
-          t.id !== activeId
-            ? t
-            : {
-                ...t,
-                background: "#0a0a0a",
-                layers: t.layers.map((l) => (l.id === "layer_title" ? { ...l, style: { ...l.style, color: "#fafafa" } } : l)),
-              }
-        )
-      );
+      patch = {
+        background: "#0a0a0a",
+        layers: active.layers.map((layer) => layer.id === "layer_title"
+          ? { ...layer, style: { ...layer.style, color: "#fafafa" } }
+          : layer),
+      };
+      updateActive({ ...active, ...patch });
       setAiPrompt("");
       return;
     }
@@ -789,6 +994,7 @@ export default function EditorPage() {
       if (!parsed.layers || !parsed.width) throw new Error("Invalid template");
       const withId = { ...parsed, id: active.id, updatedAt: Date.now() };
       setTemplates((prev) => prev.map((t) => (t.id === activeId ? withId : t)));
+      markHumanDraftChange();
       setShowJson(false);
     } catch (e) {
       alert("Import failed: " + String(e));
@@ -820,7 +1026,7 @@ export default function EditorPage() {
                 <option key={s.id} value={s.id}>{s.label}</option>
               ))}
             </select>
-            <button onClick={() => setShowAllSizes((v) => !v)} className={`px-2 py-1 border rounded text-xs ${showAllSizes ? "bg-violet-600 text-white" : "bg-white"}`}>{showAllSizes ? "Single" : "All sizes"}</button>
+            <button onClick={toggleAllSizes} className={`px-2 py-1 border rounded text-xs ${showAllSizes ? "bg-violet-600 text-white" : "bg-white"}`}>{showAllSizes ? "Single" : "All sizes"}</button>
             <div className="flex items-center gap-1 border rounded px-2 py-1 text-xs">
               <button onClick={() => setScale((s) => Math.max(0.2, s - 0.05))} className="px-1">−</button>
               <span className="font-mono w-10 text-center">{Math.round(scale * 100)}%</span>
@@ -840,6 +1046,18 @@ export default function EditorPage() {
       </header>
 
       {projectError && <div className="bg-red-50 border-b border-red-200 px-4 py-2 text-sm text-red-800">{projectError}</div>}
+      {agentWorkspaceContext && agentCatalogSnapshot && agentDesignSnapshot && (
+        <AgentWorkspaceProvider
+          key={agentWorkspaceContext.projectId}
+          context={agentWorkspaceContext}
+          catalog={agentCatalogSnapshot}
+          design={agentDesignSnapshot}
+          onApplyDesign={applyAgentDesign}
+          onSetView={applyAgentView}
+          onPreviewDesign={applyAgentPreview}
+          onHighlightLayers={setAgentHighlightedLayerIds}
+        />
+      )}
       {webmcpProbeEnabled && projectId && <WebmcpSpike projectId={projectId} template={active} onSetBackground={setProbeBackground} />}
       {saveError && (
         <div className="bg-red-50 border-b border-red-200 px-4 py-2 text-sm text-red-800 flex items-center gap-3">
@@ -859,7 +1077,8 @@ export default function EditorPage() {
           <LayersPanel
             template={active}
             selectedId={selectedId}
-            onSelect={setSelectedId}
+            highlightedIds={agentHighlightedLayerIds}
+            onSelect={selectLayer}
             onUpdate={(t) => updateActive(t)}
             onAdd={addLayer}
             onDelete={deleteLayer}
@@ -888,7 +1107,9 @@ export default function EditorPage() {
             <button onClick={() => setShowJson(!showJson)} className="px-3 py-1.5 border rounded text-xs">{showJson ? "Hide JSON" : "Copy JSON"}</button>
           </div>
 
-          {showAllSizes ? (
+          {showAllSizes && agentReview ? (
+            <AgentReviewGrid review={agentReview} products={products} onClose={closeAgentReview} />
+          ) : showAllSizes ? (
             <div className="flex-1 overflow-auto p-4 bg-zinc-100">
               <div className="text-xs text-zinc-600 mb-3 flex items-center gap-2">
                 <span>Auto-layout preview — same design adapted to every placement. Bottom-anchored title/price stay fixed, product image stretches.</span>
@@ -961,7 +1182,7 @@ export default function EditorPage() {
               product={product}
               scale={scale}
               selectedId={selectedId}
-              onSelect={setSelectedId}
+              onSelect={selectLayer}
               onUpdate={(t) => updateActive(t)}
             />
           )}
@@ -977,15 +1198,15 @@ export default function EditorPage() {
               <span className="text-xs font-medium">Preview product</span>
               <span className="text-xs text-zinc-500">{products.length ? `${productIdx + 1} / ${products.length}` : "No products — load store.gibun.at"}</span>
               <div className="ml-auto flex gap-1">
-                <button disabled={productIdx === 0} onClick={() => setProductIdx((i) => Math.max(0, i - 1))} className="px-2 py-1 border rounded text-xs disabled:opacity-30">Prev</button>
-                <button disabled={productIdx >= products.length - 1} onClick={() => setProductIdx((i) => i + 1)} className="px-2 py-1 border rounded text-xs disabled:opacity-30">Next</button>
+                <button disabled={productIdx === 0} onClick={() => selectProduct(Math.max(0, productIdx - 1))} className="px-2 py-1 border rounded text-xs disabled:opacity-30">Prev</button>
+                <button disabled={productIdx >= products.length - 1} onClick={() => selectProduct(productIdx + 1)} className="px-2 py-1 border rounded text-xs disabled:opacity-30">Next</button>
               </div>
             </div>
             <div className="flex gap-2 overflow-auto pb-1">
               {products.slice(0, 20).map((p, idx) => (
                 <button
                   key={p.id}
-                  onClick={() => setProductIdx(idx)}
+                  onClick={() => selectProduct(idx)}
                   className={`shrink-0 w-20 border rounded overflow-hidden bg-white ${idx === productIdx ? "ring-2 ring-blue-500" : ""}`}
                   title={p.title}
                 >
@@ -1175,17 +1396,21 @@ export default function EditorPage() {
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs text-zinc-500 hidden sm:inline">Live templates: {templates.length}</span>
-            <button
-              onClick={() => {
-                const t = createDefaultTemplate(active.sizeId);
-                setTemplates((p) => [...p, t]);
-                setActiveId(t.id);
-                setSaveError(null);
-              }}
-              className="px-3 py-1 border rounded text-xs"
-            >
-              New Template
-            </button>
+            {!projectId && (
+              <button
+                onClick={() => {
+                  const t = createDefaultTemplate(active.sizeId);
+                  setTemplates((p) => [...p, t]);
+                  setActiveId(t.id);
+                  markHumanDraftChange();
+                  dispatchWorkspaceRevision({ type: "view-changed", actor: "human" });
+                  setSaveError(null);
+                }}
+                className="px-3 py-1 border rounded text-xs"
+              >
+                New Template
+              </button>
+            )}
           </div>
         </div>
       </div>

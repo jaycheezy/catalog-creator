@@ -26,7 +26,7 @@ Rollback to a verified Netlify deployment with correct query variation and compa
 
 Completed: Worker Git integration disconnected; zero build triggers; production and preview endpoints disabled; no custom domains or zone routes found. Code and R2 remain. The old public hostname returns 403. Wrangler config records both disabled flags. Owner confirmed all consumers use Netlify.
 
-The known-good Netlify baseline is deploy `6a9f0dd706a33b0008cf9f48` (commit `53b3bf0`). Do not choose the older completed deploys: they lack query isolation. Verify storage backward compatibility before rolling future publication changes back to this baseline. Reconnecting Worker Git requires explicitly restoring the original repository/build settings recorded in the retirement note; enabling public URLs also requires an explicit configuration change.
+The current verified Netlify application baseline is deploy `6aa303eed8f0140008f61cf6` (commit `622cf2f`); it includes full-query isolation, versioned publication reads, and stable-feed revalidation. Deploy `6a9f0dd706a33b0008cf9f48` (commit `53b3bf0`) is retained only as the historical post-retirement reference and is not a safe publication rollback. Older completed deploys lack query isolation. Verify storage and feed-cache compatibility before any rollback. Reconnecting Worker Git requires explicitly restoring the original repository/build settings recorded in the retirement note; enabling public URLs also requires an explicit configuration change.
 
 ## Worker retirement procedure (completed)
 
@@ -45,5 +45,7 @@ Read the Netlify account's actual plan and credit dashboard; record allowance, c
 ## Failure verification
 
 Use isolated fixtures/environment for bad credentials and missing storage; never disable shared production credentials for a test. Cover new-key misses, existing R2 assets and already cached CDN responses separately. A CDN hit during an outage proves CDN availability, not R2 health. Origin may still require publication reads before serving a stored asset. Record actual sanitized error/status/retry behavior, preserve the previous published feed and recover credentials before completing the exercise.
+
+The 2026-09-11 release check provides a reproducible baseline: run the reviewed production build with local fallback disabled, replace only the isolated process's R2 access credentials, and probe an unknown feed/render/template plus an already issued immutable image path. The current route returns 503 before render-cache access when publication storage is unavailable. Restore valid credentials, require the unknown probes to return ordinary 404 responses, and require the issued image to return the same bytes/hash as an R2 hit. A separate production read before and after must retain the feed and image hashes. See the [sanitized evidence](../evidence/external-render-service/netlify-production-2026-09-10.md).
 
 Keep the evidence ledger in [release.md](release.md) current. Mark release complete only when the owning story's remaining acceptance evidence is reviewable.

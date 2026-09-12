@@ -23,4 +23,20 @@ describe("editor durable save state", () => {
     const switched = { ...template, id: "tpl_abcdef1234567890", name: "Second template" };
     expect(isTemplateSaved(switched, recordFor())).toBe(false);
   });
+
+  it("keeps a newer draft unsaved when an older in-flight save completes", () => {
+    const submitted = { ...template, background: "#111827", updatedAt: 10 };
+    const newerDraft = {
+      ...submitted,
+      background: "#2563eb",
+      updatedAt: 11,
+      revision: 4,
+    };
+    const completedSave: SavedTemplateRecord = {
+      templateId: submitted.id,
+      fingerprint: templateFingerprint({ ...submitted, revision: 4 }),
+      revision: 4,
+    };
+    expect(isTemplateSaved(newerDraft, completedSave)).toBe(false);
+  });
 });

@@ -2,7 +2,7 @@
 id: netlify-stable-feed-staleness
 title: Stable project feeds stay stale after republish on Netlify
 type: blocker
-status: open
+status: resolved
 author: Codex
 updated: "2026-09-10"
 affects: [c-external-render-release, c-reliable-publish-project, c-reliable-workflow-check]
@@ -12,7 +12,7 @@ affects: [c-external-render-release, c-reliable-publish-project, c-reliable-work
 
 Production verification found that a successful republish did not immediately update the stable anonymous project feed. The feed route advertised `public, s-maxage=3600, stale-while-revalidate=600`, so Netlify was allowed to reuse the previous CSV after the publication record had advanced. The stale CSV continued to point at the old immutable image URL. This violates the publication contract even though the new snapshot and image identity were written correctly.
 
-The local correction makes published `projectId` feeds return `public, max-age=0, must-revalidate`. Legacy domain/store feeds keep their one-hour shared cache, draft responses remain `private, no-store`, and versioned PNGs retain immutable caching. The blocker stays open until this correction is deployed and the same stable URL returns the new CSV immediately after republish.
+Resolved on deploy `6aa303eed8f0140008f61cf6`: published `projectId` feeds now return `public, max-age=0, must-revalidate`. Legacy domain/store feeds keep their one-hour shared cache, draft responses remain `private, no-store`, and versioned PNGs retain immutable caching. The same production subscription URL returned the newly published CSV and image URL immediately after republish.
 
 ## Evidence
 
@@ -24,9 +24,11 @@ The runner terminated before writing its final structured evidence bundle, so no
 
 [Netlify's dynamic response caching documentation](https://docs.netlify.com/build/caching/caching-overview/) states that `s-maxage` permits reuse in its shared cache and shows `public, max-age=0, must-revalidate` as the default non-stale policy for dynamic responses. The local Next.js CDN guide also warns that a CDN continues serving an `s-maxage` response until its TTL expires unless it is purged.
 
+The corrected deploy matched commit `622cf2f52bd304498f8ef4285ac0f99410030631`. A new isolated 75-row production run returned `Age: 0` with the revalidation policy both before and after republish. The post-update request forwarded the stale edge entry to origin and returned a changed CSV body plus a changed versioned image URL. The new PNG pixels changed, while a fresh request for the prior URL returned its original bytes through `X-Render-Cache: hit-stale`. See the [sanitized production evidence](../../../research/evidence/external-render-service/netlify-production-2026-09-10.md).
+
 ## Impact
 
-A merchant can republish successfully while Meta and other anonymous consumers continue reading the previous catalog for up to an hour, with a possible stale-while-revalidate window after that. The immutable image behavior is correct, but consumers cannot discover the new image identities until the stable CSV refreshes. Production release sign-off and the publish story's same-URL update criterion therefore remain open.
+The defective deploy could leave Meta and other anonymous consumers on the previous catalog for up to an hour. The corrected deployment revalidates the stable feed at origin while keeping the versioned images immutable, so consumers discover new image identities without changing their subscription URL. The publish story's same-URL production criterion is now satisfied.
 
 ## Regression
 
@@ -34,4 +36,4 @@ The public route tests pin both branches: stable published project feeds must re
 
 ## Next action
 
-Deploy the correction, confirm the public response header, then rerun the isolated production matrix. Record the new deploy identifier, same-URL republish result, new and old PNG evidence, all four dimensions, bounded failure/recovery, browser observations, and the release-specific Netlify usage delta before resolving this note or promoting the release story.
+Keep the revalidation assertion in the public-route regression and the same-URL check in future Netlify smoke runs. The separate release usage and isolated R2 credential checks are now attached to the release evidence; neither changes this resolved cache finding.

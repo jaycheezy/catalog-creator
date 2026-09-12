@@ -2,9 +2,9 @@
 id: "2026-09-06-free-plan-renderer-blocker"
 title: "Free-plan Worker CPU limit blocks uncached branded PNGs"
 type: blocker
-status: open
+status: resolved
 author: "Codex"
-updated: "2026-09-06"
+updated: "2026-09-11"
 affects: ["c-external-render-service", "c-external-render-adapter", "c-external-render-release"]
 ---
 
@@ -22,7 +22,8 @@ The current `ImageResponse` path cannot be the production cache-miss renderer on
 
 ## Next action
 
-The external-render-service slice starts with a bounded runtime spike. The spike owner should prove a separately deployable renderer and settle the authenticated Worker-to-service contract before implementation stories become ready.
+Keep the Worker endpoints disabled unless a paid-plan restoration is deliberately reviewed. Production rasterization now runs inside the Netlify-hosted Next app, with R2 retained on Cloudflare.
 
+## Resolution
 
-The blocker motivates the ready spike; it is not a prerequisite preventing that investigation. Resolve this production blocker only with deployed miss/hit CPU and PNG evidence after integration. The reported deployment observations above were preserved during the spec review, not independently remeasured.
+The full application moved to Netlify, where native `ImageResponse` cache misses and all four placements passed production verification. Netlify CDN and origin R2 reuse were verified separately, and the CPU-limited Worker was retired without deleting R2 data. This removes the blocked Worker render path from production and resolves the finding.

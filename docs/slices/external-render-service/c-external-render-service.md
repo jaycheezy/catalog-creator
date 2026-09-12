@@ -3,7 +3,7 @@ id: "c-external-render-service"
 slice: "external-render-service"
 title: "Host the app on Netlify with R2 on Cloudflare"
 step: "design"
-status: "in-review"
+status: "done"
 effort: "L"
 order: 2
 tags: ["netlify", "r2", "hosting"]
@@ -56,6 +56,8 @@ Run `npm run check`, `npm run build`, a Netlify deploy preview, and anonymous fe
 Report the Netlify site/project identifier without secrets, changed store/config files, env var names without values, S3 key-mapping evidence, render smoke results, and the exact assumptions the cutover story may rely on. Move to `in-review` when the app is deployable on Netlify and independently testable against R2.
 
 ## Progress
+
+- 2026-09-11 — Independent review accepted the hosted implementation and release evidence. The production Netlify build serves the complete app through the shared S3-compatible R2 seam; anonymous feeds and all four image placements, exact key/ETag behavior, query isolation, private drafts, failure recovery, and browser use are verified on the reviewed deploy. The retained Cloudflare binding path is a disabled rollback artifact rather than a production dependency. Story moved to `done`.
 
 - 2026-09-06 — Specification review aligned this story with the current three raster call sites, private-draft cache bypass and v2 render identity. No implementation or new runtime proof is claimed. See [the contract review note](notes/2026-09-06-external-render-contract-review.md).
 

@@ -5,6 +5,7 @@ import type { Layer, Template } from "./types";
 export function LayersPanel({
   template,
   selectedId,
+  highlightedIds = [],
   onSelect,
   onUpdate,
   onAdd,
@@ -13,6 +14,7 @@ export function LayersPanel({
 }: {
   template: Template;
   selectedId: string | null;
+  highlightedIds?: string[];
   onSelect: (id: string) => void;
   onUpdate: (patch: Template) => void;
   onAdd: (type: Layer["type"]) => void;
@@ -45,17 +47,22 @@ export function LayersPanel({
         {[...template.layers]
           .slice()
           .sort((a, b) => b.z - a.z)
-          .map((l) => (
+          .map((l) => {
+            const highlighted = highlightedIds.includes(l.id);
+            return (
             <div
               key={l.id}
               onClick={() => onSelect(l.id)}
-              className={`px-3 py-2 flex items-center gap-2 cursor-pointer text-sm ${selectedId === l.id ? "bg-blue-50" : "hover:bg-zinc-50"}`}
+              className={`px-3 py-2 flex items-center gap-2 cursor-pointer text-sm ${selectedId === l.id ? "bg-blue-50" : highlighted ? "bg-violet-50 ring-1 ring-inset ring-violet-300" : "hover:bg-zinc-50"}`}
             >
               <span className="text-xs w-6 h-6 rounded bg-zinc-100 flex items-center justify-center shrink-0">
                 {l.type === "product-image" ? "🖼" : l.type === "text" ? "T" : l.type === "badge" ? "⬢" : "▭"}
               </span>
               <div className="flex-1 min-w-0">
-                <div className="truncate font-medium text-xs">{l.name}</div>
+                <div className="truncate font-medium text-xs">
+                  {l.name}
+                  {highlighted && <span className="ml-1 text-[10px] font-normal text-violet-700">Changed by agent</span>}
+                </div>
                 <div className="truncate text-[11px] text-zinc-500">{l.type} • {l.content?.slice(0, 24) ?? "—"}</div>
               </div>
               <div className="flex gap-1 shrink-0">
@@ -80,7 +87,8 @@ export function LayersPanel({
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
       </div>
       <div className="p-3 border-t space-y-2">
         <div className="text-xs text-zinc-500">Template: {template.width}×{template.height} • {template.sizeId}</div>

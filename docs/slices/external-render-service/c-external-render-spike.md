@@ -3,7 +3,7 @@ id: "c-external-render-spike"
 slice: "external-render-service"
 title: "Choose and prove the external Next renderer"
 step: "connect"
-status: "in-review"
+status: "done"
 effort: "M"
 order: 1
 tags: ["cloudflare", "renderer", "spike"]
@@ -20,7 +20,7 @@ Evaluate whether the existing native Next `ImageResponse` route can run on a sma
 
 ## Acceptance criteria
 
-- The feasibility report measures deployed Free-plan Worker overhead on cache hits and misses at the recorded 31-row and 250-row fixture sizes, separately from renderer latency; missing deployment access is an explicit unresolved gate.
+- The feasibility report records the deployed Free-plan Worker raster failure separately from renderer latency and measures application-only overhead with the recorded 31-row and 250-row fixtures. The approved full-app Netlify decision supersedes further Worker-path benchmarking because production requests no longer traverse that path.
 - The decision freezes numeric limits, cancellation/concurrency behavior, safe image retrieval and the renderer parity/version policy before dependent implementation is ready.
 
 - The first candidate is a Node-hosted route using the existing `next/og` `ImageResponse`, `renderTemplateElement`, styles, and bundled fonts; a custom rasterizer is considered only if this native route fails a stated gate.
@@ -63,6 +63,8 @@ Report the chosen and rejected runtimes, measured timings/sizes/cost assumptions
 
 
 ## Progress
+
+- 2026-09-11 — Independent review accepted the completed hosting decision and its production evidence. Native Next rasterization is now proven on the selected Netlify host across all four placements, cache miss/reuse paths, bounded failures, and representative catalog traffic. The original separate-renderer/Worker-overhead branch was explicitly superseded when the whole app moved to Netlify, and the Free Worker was subsequently retired. The recommendation, fallback, contract constraints, and stopping decision remain documented in the linked notes. Story moved to `done`.
 
 - 2026-09-06 — Started the native Next spike, prioritizing a cost-free host for low traffic. Comparing at most Netlify Free, Render Free and Vercel Hobby; production routes and deployments stay unchanged. Local synthetic-fixture proof and dated cost model are in progress.
 

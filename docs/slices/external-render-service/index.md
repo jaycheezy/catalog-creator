@@ -20,9 +20,9 @@ This slice owns the Netlify hosting decision, the R2 S3-compatibility seam, traf
 
 ## Current evidence
 
-The [Free-plan blocker](notes/2026-09-06-free-plan-renderer-blocker.md) records a deployed `exceededCpu` failure for Worker-side rasterization, which the hosting decision accepts as final for the Worker. The [spike PoC proposal](notes/2026-09-06-renderer-spike-poc.md) proves the native route unmodified on a production Node build (cold miss 545 ms, steady misses 89–435 ms, warm-hit p95 2.7 ms, exact PNG dimensions on all four placements, byte-identical refetches) and recommends Netlify Free as primary host with Cloud Run free as fallback. A Netlify-hosting decision by the owner superseded the separate-renderer direction; the old service/adapter split below is replaced by host, cutover, and release stories.
+The resolved [Free-plan blocker](notes/2026-09-06-free-plan-renderer-blocker.md) records the deployed `exceededCpu` failure that removed Worker-side rasterization from consideration. The resolved [spike PoC proposal](notes/2026-09-06-renderer-spike-poc.md) proves the native route on a production Node build and records Netlify as the selected host with Cloud Run as fallback. The owner then simplified the architecture by moving the complete Next application to Netlify rather than adding a separate renderer service.
 
-Production follow-up on 2026-09-07 verified CDN reuse and an origin R2 hit, but found that Netlify ignores catalog query parameters and returns the square PNG for a portrait request. The [cache-isolation blocker](notes/2026-09-07-netlify-cache-query-isolation.md) records evidence, the local configuration fix, and required deployment checks. The owner subsequently confirmed the deployment/cache checks complete; that blocker is resolved and hosting is in-review. The selected production address remains `cataloghog.netlify.app`; custom-domain work is deferred.
+The [cache-isolation blocker](notes/2026-09-07-netlify-cache-query-isolation.md) and [stable-feed blocker](notes/2026-09-10-netlify-stable-feed-staleness.md) are resolved on the reviewed production deployment. The final evidence covers all-query isolation, immediate feed freshness, four placement dimensions, anonymous versioned images, CDN and origin R2 reuse, historical assets, private drafts, bounded failure/recovery, browser operation, Free Legacy usage, and an external Meta import with no failed rows or issues. The selected production address remains `cataloghog.netlify.app`; custom-domain work is deferred.
 
 ## Shared architecture and contracts
 
@@ -67,13 +67,17 @@ An empty image URL preserves the existing deterministic missing-image block. A n
 3. `c-external-render-adapter` cuts traffic over, verifies the new host, and retires the Worker.
 4. `c-external-render-release` proves local, Netlify, cache-hit, failure, credit, and representative Meta-fetch behavior.
 
-Hosting and completed retirement are in-review; final release evidence remains outstanding. See the [release handoff](../../research/external-render-service/release.md). Release proof depends on both implementation stories.
+All four stories are complete after independent review of the spike, hosting, Worker retirement, and production release evidence. See the [release handoff](../../research/external-render-service/release.md).
 
 ## Release evidence
 
 The slice is complete when a fresh versioned production render returns `200 image/png` on a cache miss, a repeat returns the same bytes and ETag from R2 without re-rasterization, uncached stale revisions still return `409` while already cached historical assets remain retrievable, R2/credential failures are actionable, Actual-plan Netlify usage is recorded against the free allowance, and the published feed contains usable anonymous image URLs. Evidence must include Netlify deploy identifiers and function logs, R2 object evidence, and redacted response metadata.
 
 The evidence must also show all three formerly Worker-inline raster paths rasterizing in-route on Netlify, bounded failure behavior, and timings for misses and hits at the recorded catalog size. A build alone is insufficient. Reuse this evidence from `c-reliable-workflow-check`; that story retains the four-source merchant journey and manual Meta import requirement.
+
+## September 11 closure
+
+Independent review accepted the complete evidence bundle. Netlify is the sole production application host, the former Worker remains disabled, R2 data is retained, the operational runbook is current, and the external Meta acceptance succeeded. Every story in this slice is `done`; future work belongs in a new slice or a newly recorded production finding.
 
 ## September 8 handoff
 

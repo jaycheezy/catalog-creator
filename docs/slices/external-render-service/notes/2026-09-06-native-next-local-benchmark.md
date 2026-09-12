@@ -2,9 +2,9 @@
 id: native-next-local-benchmark
 title: Native Next parity and bounded execution pass locally; free-host limits corrected
 type: finding
-status: open
+status: resolved
 author: Codex
-updated: "2026-09-06"
+updated: "2026-09-11"
 story: c-external-render-spike
 affects:
   - c-external-render-service
@@ -28,4 +28,8 @@ Service should reuse the shared Next projection and engine; its safe remote-imag
 
 ## Next action
 
-Consolidate with the other agent's investigation and review the hosting choice. Keep the spike in review and downstream stories proposed; do not mark production CPU or hosted PNG gates satisfied. No additional deployment or provider exploration is being initiated in this task.
+Retain the local benchmark as reproducible parity evidence. Re-run it only when the renderer, fonts, placement dimensions, or runtime versions change.
+
+## Resolution
+
+The hosting choice was consolidated around a full-app Netlify deployment. The selected production build subsequently passed hosted PNG, cache, failure/recovery, capacity, and browser checks, so the local-only limitation no longer blocks the slice.

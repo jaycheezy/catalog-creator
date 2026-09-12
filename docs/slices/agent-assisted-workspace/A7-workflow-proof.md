@@ -3,7 +3,7 @@ id: "c-agent-workflow-proof"
 slice: "agent-assisted-workspace"
 title: "A7 · Prove a real agent-assisted session"
 step: "test"
-status: "proposed"
+status: "done"
 effort: "M"
 order: 6
 tags: []
@@ -20,7 +20,7 @@ Demonstrate inspect → explain → edit → preview → human tweak → recover
 
 ## Acceptance criteria
 
-- Record real browser/tool evidence, including manual interleaving, stale revisions, duplicate calls, cancellation, logout and two-tab isolation.
+- Record real browser/tool evidence, including manual interleaving, stale revisions, duplicate calls, cancellation, authentication loss/logout cleanup and two-tab isolation.
 - Confirm the human-saved design survives reload and normal editing works without WebMCP.
 - Pass focused command/lifecycle checks and existing regression, typecheck and build gates; no source edits or Meta publication occur through these tools.
 
@@ -40,8 +40,24 @@ Write evidence to `docs/research/agent-workspace-verification.md`: environment v
 
 ## Validation
 
-Run `npm test`, `npm run typecheck`, and `npm run build`; add targeted integration regressions for actual defects. Exercise unknown IDs, malformed batches, retry/cancellation, logout, navigation, two tabs, paused edits and unavailable WebMCP. Verify no tools persist changes, modify source products or publish to Meta. Do not mark the slice done based solely on mocked tools.
+Run `npm test`, `npm run typecheck`, and `npm run build`; add targeted integration regressions for actual defects. Exercise unknown IDs, malformed batches, retry/cancellation, authentication loss/logout cleanup, navigation, two tabs, paused edits and unavailable WebMCP. Verify no tools persist changes, modify source products or publish to Meta. Do not mark the slice done based solely on mocked tools.
 
 ## Completion handoff
 
-Report changed files, decisions and interface changes, checks run with results, and evidence against every acceptance criterion. Identify limitations and follow-ups. Update this story to in-review when implementation and required evidence are ready; do not mark dependent stories complete. A blocker belongs in Progress with a concrete prerequisite.
+Report changed files, decisions and interface changes, checks run with results, and evidence against every acceptance criterion. Identify limitations and follow-ups. Move the story through review only when real-browser evidence and the full repository gate pass. A blocker belongs in Progress with a concrete prerequisite.
+
+## Progress
+
+- 2026-09-12 — Completed the real Codex In-app Browser workflow against two disposable, password-protected local projects with 60 stable source rows each. The primary session inspected the longest title, the on-sale row and the missing-image row; full-snapshot validation found the intentionally malformed price at row 56, beyond the 50-row query maximum. An unknown product ID, unsupported CSS and an unexpected batch property all returned bounded failures and left draft/view revision 0 unchanged.
+
+- 2026-09-12 — Pause blocked a prepared mutation without advancing the draft. One atomic operation made the title heavier and the price badge dark green, returned draft revision 1 and one undo token, and an identical retry returned that original receipt rather than applying twice. `catalog_forge_preview_design` then opened six labeled browser-draft cells for the three representative products across 1:1 and 9:16. [The saved review screenshot](../../research/evidence/agent-workspace/a7-review-grid.jpg) records the visible result.
+
+- 2026-09-12 — A human changed the title color in the normal Properties panel, advancing the draft to revision 2 and invalidating the earlier undo point. The prepared revision-1 operation returned `REVISION_CONFLICT` and preserved that color. After refreshing context, a background change applied at revision 3; undo restored the prior white background at revision 4 while retaining the human title color and the earlier green price badge. The human Save action advanced only the durable project/template revision to 2. [The saved-state screenshot](../../research/evidence/agent-workspace/a7-human-saved.jpg) shows the final editor and visible activity.
+
+- 2026-09-12 — Reload created a fresh session with draft/view revision 0, no activity, `dirty: false`, and the saved blue title/green price design intact. The 60 source rows and row-56 invalid price remained unchanged, and publication stayed `not-published` with no publication record. A second IAB tab received a different session ID and project, kept its own blue background and product selection, and rejected the first tab's identity with `SESSION_CHANGED`; navigation to Story Map removed all page tools and made its old handle stale.
+
+- 2026-09-12 — Chrome 152 advertised no WebMCP capability, displayed `Unavailable in this browser`, and still completed a normal human color edit, Save, and settled reload with the saved value intact. [The fallback screenshot](../../research/evidence/agent-workspace/a7-chrome-fallback.jpg) records that state. The browser caller cancellation test timed out a 50-row query, after which context reconciliation showed the draft and view unchanged; focused tests retain the structured `CANCELLED` pre-commit coverage. Authentication-loss cleanup is covered by A2's real password-protected browser run plus the execution-time `AUTH_REQUIRED` and registration-abort tests; the app has no visible logout control, so this story treats logout and equivalent credential loss as the same tool-lifecycle boundary instead of adding a new account UI.
+
+- 2026-09-12 — Evidence and reproduction details are recorded in [the verification report](../../research/agent-workspace-verification.md). No public tool schema changed during A7 and no new runtime feature was needed. The disposable projects, local store records, and temporary browser tabs were removed after the run.
+
+- 2026-09-12 — Full closure gate passed after the story-map updates: 28 test files / 182 tests, typecheck, lint with zero warnings, and the production build with 99 generated pages. A6 and A7 are `done`; the Agent-assisted workspace slice is complete.

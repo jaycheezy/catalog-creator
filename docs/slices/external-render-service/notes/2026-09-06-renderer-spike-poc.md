@@ -2,9 +2,9 @@
 id: external-renderer-spike-poc
 title: Native Next renderer proven on Node; Netlify Free primary, Cloud Run fallback
 type: proposal
-status: open
+status: resolved
 author: Muse Spark
-updated: "2026-09-06"
+updated: "2026-09-11"
 story: c-external-render-spike
 affects:
   - c-external-render-service
@@ -57,4 +57,8 @@ The native-route-first strategy is proven; the custom-rasterizer fallback is not
 
 ## Next action
 
-Approve or amend the Netlify Free primary (Cloud Run fallback) to unblock `c-external-render-service`. Still required before implementation: deploy the renderer to the chosen host from its owner account (about 15 minutes, Bearer secret via the host's secret storage), then record deployed Worker CPU on hits and misses at the 31-row and 250-row fixtures plus the Meta-fetch end-to-end in the release story. `scripts/poc-render-fixture.mjs` (seed/restore) is kept for re-verification.
+Keep `scripts/poc-render-fixture.mjs` for renderer re-verification. Revisit Cloud Run only if the Netlify-hosted application stops meeting its documented execution or allowance gates.
+
+## Resolution
+
+The owner selected Netlify, then simplified the proposal by hosting the complete Next application there instead of keeping a Worker front door plus a separate renderer. Production verification proved the native route, R2 storage seam, cache behavior, recovery, and Meta-facing output; Cloud Run remains the documented fallback. The superseded service contract above is retained as decision history.

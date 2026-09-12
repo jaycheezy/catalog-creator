@@ -3,7 +3,7 @@ id: "c-external-render-adapter"
 slice: "external-render-service"
 title: "Confirm Netlify traffic and retire the Worker"
 step: "feed"
-status: "in-review"
+status: "done"
 effort: "M"
 order: 3
 tags: ["netlify", "dns", "cutover"]
@@ -53,6 +53,8 @@ Verify DNS resolution, certificate validity, anonymous feed/image access on the 
 Report DNS/domain changes, the Worker retirement action, verification evidence per acceptance bullet, rollback steps, and any hostname-specific limitation. Move to `in-review` only after production traffic is served from Netlify with the Worker retired.
 
 ## Progress
+
+- 2026-09-11 — Independent review accepted the cutover and retirement evidence. Netlify is the documented production host, active feed consumers use it, the former Worker public and preview endpoints remain disabled with zero Git triggers, and R2 objects were preserved. The current reviewed Netlify deploy supplies the compatible recovery point and passed anonymous feed/image checks after retirement. Story moved to `done`.
 
 - 2026-09-06 — Specification review aligned this story with the current three raster call sites, private-draft cache bypass and v2 render identity. No implementation or new runtime proof is claimed. See [the contract review note](notes/2026-09-06-external-render-contract-review.md).
 

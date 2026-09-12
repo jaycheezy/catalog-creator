@@ -1,15 +1,13 @@
-export type WebMcpTool = {
-  name: string;
-  title?: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-  execute: (input: unknown, options: { signal?: AbortSignal }) => unknown | Promise<unknown>;
-  annotations?: { readOnlyHint?: boolean };
-};
+import {
+  ensureWebMcpNotAborted,
+  getWebMcpModelContext,
+  registerWebMcpTools,
+  type WebMcpModelContext,
+  type WebMcpTool,
+} from "./webmcp";
 
-export type WebMcpModelContext = {
-  registerTool: (tool: WebMcpTool, options?: { signal?: AbortSignal }) => Promise<void>;
-};
+export { describeWebMcpError } from "./webmcp";
+export type { WebMcpModelContext, WebMcpTool } from "./webmcp";
 
 export type SpikeContext = {
   sessionId: string;
@@ -33,41 +31,6 @@ type BackgroundInput = { background?: unknown };
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 
-/**
- * WebMCP implementations can reject registration with a structured value
- * instead of an Error. Keep the probe diagnostic useful without exposing a
- * browser object or a stack trace.
- */
-export function describeWebMcpError(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  try {
-    const encoded = JSON.stringify(error);
-    if (encoded && encoded !== "{}") return encoded;
-  } catch {}
-  return String(error);
-}
-
-export function getWebMcpModelContext(): WebMcpModelContext | null {
-  if (typeof document !== "undefined") {
-    const current = (document as Document & { modelContext?: WebMcpModelContext }).modelContext;
-    if (current && typeof current.registerTool === "function") return current;
-  }
-  if (typeof navigator !== "undefined") {
-    const legacy = (navigator as Navigator & { modelContext?: WebMcpModelContext }).modelContext;
-    if (legacy && typeof legacy.registerTool === "function") return legacy;
-  }
-  return null;
-}
-
-function ensureNotAborted(signal?: AbortSignal): void {
-  if (signal?.aborted) {
-    const error = new Error("The WebMCP probe action was cancelled.");
-    error.name = "AbortError";
-    throw error;
-  }
-}
-
 function readBackground(input: unknown): string {
   const value = (input && typeof input === "object" ? input as BackgroundInput : {}).background;
   if (typeof value !== "string" || !HEX_COLOR.test(value)) {
@@ -78,11 +41,6 @@ function readBackground(input: unknown): string {
 
 export async function registerWebMcpSpikeTools(options: RegistrationOptions): Promise<SpikeRegistration> {
   const modelContext = options.modelContext === undefined ? getWebMcpModelContext() : options.modelContext;
-  if (!modelContext || typeof modelContext.registerTool !== "function") {
-    return { supported: false, reason: "webmcp-unavailable" };
-  }
-
-  const controller = new AbortController();
   const getContext: WebMcpTool = {
     name: "catalog_forge_spike_get_context",
     title: "Catalog Forge spike context",
@@ -90,7 +48,7 @@ export async function registerWebMcpSpikeTools(options: RegistrationOptions): Pr
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true },
     execute: (_input, toolOptions) => {
-      ensureNotAborted(toolOptions?.signal);
+      ensureWebMcpNotAborted(toolOptions?.signal);
       const context = options.getContext();
       return {
         ok: true,
@@ -121,7 +79,7 @@ export async function registerWebMcpSpikeTools(options: RegistrationOptions): Pr
       additionalProperties: false,
     },
     execute: (input, toolOptions) => {
-      ensureNotAborted(toolOptions?.signal);
+      ensureWebMcpNotAborted(toolOptions?.signal);
       const background = readBackground(input);
       const before = options.getContext().background;
       options.setBackground(background);
@@ -137,21 +95,5 @@ export async function registerWebMcpSpikeTools(options: RegistrationOptions): Pr
     },
   };
 
-  try {
-    await modelContext.registerTool(getContext, { signal: controller.signal });
-    await modelContext.registerTool(setBackground, { signal: controller.signal });
-  } catch (error) {
-    controller.abort();
-    throw error;
-  }
-
-  let cleaned = false;
-  return {
-    supported: true,
-    cleanup: () => {
-      if (cleaned) return;
-      cleaned = true;
-      controller.abort();
-    },
-  };
+  return registerWebMcpTools([getContext, setBackground], modelContext);
 }

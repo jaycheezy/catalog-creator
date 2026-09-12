@@ -134,7 +134,7 @@ describe('Story status changes', () => {
   });
 });
 
-describe('Story card variants', () => {
+describe('Story card', () => {
   const cardStory = (): Story => ({
     id: 'card-one', slice: 'example', slug: 'card-one', title: 'Card title', step: 'design',
     status: 'in-progress', effort: 'M', order: 0, tags: [], dependsOn: [], implementation: 'specified',
@@ -143,25 +143,17 @@ describe('Story card variants', () => {
     description: 'A longer card description that spans a couple of lines so clamping can be observed.',
     acceptance: ['Do the thing'], progress: '',
   });
-  const renderCard = (variant: 'studio' | 'ribbon' | 'compact') => renderToStaticMarkup(createElement(StoryCard, {
-    story: cardStory(), stories: [cardStory()], variant, dimmed: false, saving: false, savingKind: null,
+  const renderCard = () => renderToStaticMarkup(createElement(StoryCard, {
+    story: cardStory(), stories: [cardStory()], dimmed: false, saving: false, savingKind: null,
     onDragStart: () => {}, onDragEnd: () => {}, onStatusSelect: () => {},
   }));
-  it('renders three visually distinct variants with the same content and actions', () => {
-    const studio = renderCard('studio');
-    const ribbon = renderCard('ribbon');
-    const compact = renderCard('compact');
-    for (const html of [studio, ribbon, compact]) {
-      expect(html).toContain('Card title');
-      expect(html).toContain('Change status');
-      expect(html).toContain('View implementation spec');
-    }
-    expect(studio).not.toContain('border-l-4');
-    expect(studio).not.toContain('line-clamp-2');
-    expect(ribbon).toContain('border-l-4');
-    expect(ribbon).toContain('border-l-amber-400');
-    expect(compact).toContain('line-clamp-2');
-    expect(compact).not.toContain('border-l-4');
+  it('renders the compact card with content and actions', () => {
+    const html = renderCard();
+    expect(html).toContain('Card title');
+    expect(html).toContain('Change status');
+    expect(html).toContain('View implementation spec');
+    expect(html).toContain('line-clamp-2');
+    expect(html).not.toContain('border-l-4');
   });
 });
 

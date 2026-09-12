@@ -3,7 +3,7 @@ id: "c-reliable-publish-project"
 slice: "reliable-catalog"
 title: "Publish and reopen the correct project feed"
 step: "publish"
-status: "in-review"
+status: "done"
 effort: "M"
 order: 17
 tags: ["next"]
@@ -19,6 +19,8 @@ value: "Keeps your published product feed saved and reopenable, so you can updat
 Make the feed URL a durable project output that can be reopened and updated after leaving the editor, including projects created from CSV or feed URLs.
 
 ## Progress
+
+- 2026-09-10 — Deployed verification closes the stable-feed regression on Netlify deploy `6aa303eed8f0140008f61cf6` / commit `622cf2f`. A 75-row CHF/sale project published and republished through the unchanged anonymous URL; both responses required revalidation, and the second immediately returned a changed CSV and immutable image URL. The new PNG changed pixels, the old PNG remained byte-identical through `hit-stale`, a rejected invalid-template publish preserved the live feed, recovery returned 75 rows, and reopen matched the active revision. Four versioned placement feeds returned exact dimensions. Browser inspection showed the restored project, live revision 5, `Saved ✓`, Republish, copy/download controls, and clean long-title rendering. The story returns to `done`; see [production evidence](../../research/evidence/external-render-service/netlify-production-2026-09-10.md) and the [resolved blocker](../external-render-service/notes/2026-09-10-netlify-stable-feed-staleness.md).
 
 - 2026-09-10 — Production verification reopened review after deploy `6aa2fe6d9942ce0008928f2d` exposed a stale stable-feed response after a successful republish. The project feed advertised a one-hour shared-cache TTL, so Netlify could return the previous CSV and old immutable image URL. The local fix makes stable `projectId` feeds revalidate on every request while leaving legacy store feeds and immutable PNG caching intact. Public-boundary regressions pass (3 files / 28 tests); the full gate is green (23 files / 152 tests, typecheck, 0 lint warnings, Next build, OpenNext/Cloudflare build, and clean diff whitespace). Redeploy and same-URL production proof are required before returning this story to `done`; see [the production blocker](../external-render-service/notes/2026-09-10-netlify-stable-feed-staleness.md).
 
