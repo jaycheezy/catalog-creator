@@ -26,3 +26,8 @@ export type StoryStatusResult = {
   changed: boolean;
 };
 export function applyStoryStatus(files: StoryMapFile[], change: StoryStatusChange): StoryStatusResult;
+export type SliceOrderResult = {
+  files: StoryMapFile[];
+  changed: string[];
+};
+export function applySliceOrder(files: StoryMapFile[], order: string[]): SliceOrderResult;

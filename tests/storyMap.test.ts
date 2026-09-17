@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyStoryMove, applyStoryStatus, compileStoryMap, readStoryMap } from '../scripts/story-map-content.mjs';
+import { applySliceOrder, applyStoryMove, applyStoryStatus, compileStoryMap, readStoryMap } from '../scripts/story-map-content.mjs';
 import { createHandoff, isReady, unmetDependencies, relatedNotes, sortNotes, type ImplementationNote, type Story, type Slice } from '../src/story-map/model';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement } from 'react';
@@ -134,6 +134,33 @@ describe('Story status changes', () => {
   });
 });
 
+describe('Slice reorder', () => {
+  const indexFile = (id: string, order: number) => ({
+    path: `docs/slices/${id}/index.md`,
+    source: frontmatter({ id, title: id, description: 'An outcome', order, tone: 'blue' }, `# ${id}`),
+  });
+  const files = () => [indexFile('alpha', 0), indexFile('beta', 1), indexFile('gamma', 2)];
+  it('renumbers slice order to the given sequence with bare integers', () => {
+    const result = applySliceOrder(files(), ['gamma', 'alpha', 'beta']);
+    expect(result.changed).toHaveLength(3);
+    const sources = new Map(result.files.map(entry => [entry.path.split('/')[2], entry.source]));
+    expect(sources.get('gamma')).toContain('\norder: 0\n');
+    expect(sources.get('alpha')).toContain('\norder: 1\n');
+    expect(sources.get('beta')).toContain('\norder: 2\n');
+    expect(compileStoryMap(result.files).slices.map(entry => (entry as Slice).id)).toEqual(['gamma', 'alpha', 'beta']);
+  });
+  it('reports no changes when the sequence already matches', () => {
+    const result = applySliceOrder(files(), ['alpha', 'beta', 'gamma']);
+    expect(result.changed).toEqual([]);
+  });
+  it('rejects partial, duplicate, unknown and empty orders', () => {
+    expect(() => applySliceOrder(files(), ['alpha'])).toThrow('exactly once');
+    expect(() => applySliceOrder(files(), ['alpha', 'alpha', 'beta'])).toThrow('duplicate');
+    expect(() => applySliceOrder(files(), ['alpha', 'beta', 'nope'])).toThrow('exactly once');
+    expect(() => applySliceOrder(files(), [])).toThrow('non-empty array');
+  });
+});
+
 describe('Story card', () => {
   const cardStory = (): Story => ({
     id: 'card-one', slice: 'example', slug: 'card-one', title: 'Card title', step: 'design',
@@ -151,7 +178,7 @@ describe('Story card', () => {
     const html = renderCard();
     expect(html).toContain('Card title');
     expect(html).toContain('Change status');
-    expect(html).toContain('View implementation spec');
+    expect(html).toContain('Open spec for');
     expect(html).toContain('line-clamp-2');
     expect(html).not.toContain('border-l-4');
   });

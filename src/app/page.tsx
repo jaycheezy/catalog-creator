@@ -3,13 +3,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TemplateRenderer } from "@/editor/TemplateRenderer";
 import { adaptTemplateToSize } from "@/editor/autoLayout";
-import { SIZE_PRESETS } from "@/editor/types";
+import { SIZE_PRESETS, type Template } from "@/editor/types";
 import { DEMO_TEMPLATES } from "@/lib/demoTemplates";
+import { HOMEPAGE_SLOTS } from "@/lib/homepageTemplates";
 import { heuristicBrandKit, type BrandKit } from "@/lib/brand";
 import { parseFeedCsv } from "@/lib/feedImport";
 import type { FeedRow } from "@/lib/facebook";
 import { useRouter } from "next/navigation";
 import { validateCatalog, type CatalogValidationResult } from "@/lib/catalogValidation";
+import { PhoneHero } from "@/components/PhoneHero";
+import { IgTabBar } from "@/components/IgTabBar";
+import { sampleImageColor } from "@/lib/imageColor";
 
 // Concept D — Porcelain Signal
 const INK = "#191712";
@@ -67,12 +71,20 @@ export default function Home() {
   const [csvText, setCsvText] = useState<string | null>(null);
   const [projectSaving, setProjectSaving] = useState(false);
   const [projectError, setProjectError] = useState<string | null>(null);
-  const [templateId, setTemplateId] = useState(DEMO_TEMPLATES[0].id);
+  const [templateId, setTemplateId] = useState<string>(HOMEPAGE_SLOTS[0].id);
+  // Homepage showcase designs (Admin-editable). DEMO_TEMPLATES are the
+  // offline fallback — identical pixels until the fetch resolves.
+  const [showcase, setShowcase] = useState<Template[] | null>(null);
+  const TEMPLATES = showcase ?? DEMO_TEMPLATES;
   const [mode, setMode] = useState<"enriched" | "raw">("enriched");
   const [placement, setPlacement] = useState<Placement>("carousel");
   const [kit, setKit] = useState<BrandKit>(() => heuristicBrandKit(DEFAULT_DOMAIN));
   const [carouselIdx, setCarouselIdx] = useState(0);
   const trackRef = useRef<HTMLDivElement>(null);
+  // Before/after wipe on the hero creative: one parked position shared by all
+  // slides (stable while swiping), handle-only drag so the carousel swipe wins.
+  const [compareOn, setCompareOn] = useState(true);
+  const [comparePos, setComparePos] = useState(62);
 
   const fetchPreview = useCallback(async (d: string) => {
     const target = d.trim() || DEFAULT_DOMAIN;
@@ -201,6 +213,16 @@ export default function Home() {
     fetchPreview(DEFAULT_DOMAIN);
   }, [fetchPreview]);
 
+  useEffect(() => {
+    fetch("/api/homepage-templates")
+      .then(async (res) => {
+        if (!res.ok) return;
+        const json = (await res.json()) as { slots?: { template: Template }[] };
+        if (json.slots?.length) setShowcase(json.slots.map((s) => s.template));
+      })
+      .catch(() => {});
+  }, []);
+
   // One card per unique image — variants sharing a packshot collapse.
   const uniques = useMemo(() => {
     const seen = new Set<string>();
@@ -217,9 +239,25 @@ export default function Home() {
   const products = uniques.length > 0 ? uniques : (data?.preview ?? []);
   const single = products[0] ?? null;
 
+  /* Living backdrop glow: average hue of the visible product photo, cached
+     per image URL. Sampling is a 24px canvas read on load (microseconds);
+     the creative already fetched the bytes, so no extra download. Tainted
+     canvases (host without CORS) yield null → we keep the previous glow. */
+  const [glow, setGlow] = useState<string | null>(null);
+  const glowCache = useRef(new Map<string, string>());
+  const glowSrc =
+    (placement === "carousel"
+      ? products[Math.min(carouselIdx, Math.max(products.length - 1, 0))]
+      : single)?.image_link || "";
+  useEffect(() => {
+    if (!glowSrc) return;
+    const hit = glowCache.current.get(glowSrc);
+    if (hit) setGlow((g) => (g === hit ? g : hit));
+  }, [glowSrc]);
+
   const baseTemplate = useMemo(
-    () => DEMO_TEMPLATES.find((t) => t.id === templateId) ?? DEMO_TEMPLATES[0],
-    [templateId]
+    () => TEMPLATES.find((t) => t.id === templateId) ?? TEMPLATES[0],
+    [templateId, TEMPLATES]
   );
 
   // D-system recolor: price pill → ink, vendor line → moss.
@@ -289,8 +327,8 @@ export default function Home() {
   };
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden" style={{ background: PORCELAIN, color: INK }}>
-      <header className="shrink-0 border-b bg-white/90 backdrop-blur" style={{ borderColor: LINE }}>
+    <div className="min-h-screen flex flex-col" style={{ background: PORCELAIN, color: INK }}>
+      <header className="border-b bg-white/90 backdrop-blur sticky top-0 z-40" style={{ borderColor: LINE }}>
         <div className="max-w-[1300px] mx-auto px-8 py-3 flex items-center gap-3">
           <h1 className="text-[15px] font-bold tracking-tight">Catalog Forge</h1>
           <span className="flex items-center gap-1.5 font-mono text-[10px]" style={{ color: MOSS }}>
@@ -298,104 +336,91 @@ export default function Home() {
           </span>
           <div className="ml-auto flex items-center gap-2">
             <button onClick={() => saveProjectAndNavigate("/validate")} disabled={!data || projectSaving} className="text-xs px-3 py-1.5 border rounded-full font-medium hover:bg-zinc-50 disabled:opacity-40" style={{ borderColor: LINE }}>Validate</button>
-            <button onClick={() => saveProjectAndNavigate("/editor")} disabled={!data || projectSaving} className="text-xs px-3 py-1.5 text-white rounded-full font-bold disabled:opacity-40" style={{ background: INK }}>{projectSaving ? "Saving…" : "Open Editor →"}</button>
+            <button onClick={() => router.push("/admin")} className="text-xs px-3 py-1.5 border rounded-full font-medium hover:bg-zinc-50" style={{ borderColor: LINE }}>Admin</button>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 min-h-0 w-full max-w-[1300px] mx-auto px-8 grid lg:grid-cols-2 gap-8 items-center">
-        {/* LEFT — airy, half width */}
-        <div className="max-w-[480px] w-full justify-self-center py-10 space-y-7 lg:pl-14 xl:pl-20">
+      <main className="w-full max-w-[1300px] mx-auto px-8 grid lg:grid-cols-2 gap-8 items-start">
+        {/* LEFT — card rail, scrolls with the page */}
+        <div className="max-w-[520px] w-full justify-self-center py-10 space-y-4 lg:pl-10 xl:pl-16">
           <div>
               <div className="font-mono text-[10px] tracking-[0.24em] uppercase" style={{ color: MOSS }}>
                 Shopify + Woo → Instagram ad
               </div>
             <h2 className="text-[52px] leading-[1.0] mt-3" style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}>
-              Your products,<br /><em className="whitespace-nowrap" style={{ color: MOSS }}>dressed for Meta.</em>
+              Your products,<br /><em className="whitespace-nowrap" style={{ color: MOSS }}>dressed for social.</em>
             </h2>
             <p className="text-[15px] text-zinc-600 mt-4 leading-relaxed">
-              Paste a store URL. We turn the raw catalog into a branded Instagram ad — previewed in the phone.
+              Paste your store, feed, or CSV. We turn your catalog into beautiful, on-brand Instagram ads — in seconds.
             </p>
           </div>
 
-          <div className="flex items-center gap-5 text-[13px] font-medium">
-            {(["store", "feed", "csv"] as SourceTab[]).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={tab === t ? "underline underline-offset-8 decoration-2" : "text-zinc-400 hover:text-zinc-700"}
-              >
-                {t === "store" ? "Store URL" : t === "feed" ? "Feed URL" : "CSV"}
-              </button>
-            ))}
-            <span className="ml-auto font-mono text-[10.5px] text-zinc-400">Shopify + Woo = instant</span>
-          </div>
-
-          {tab === "store" && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                fetchPreview(domain);
-              }}
-              className="flex items-center gap-2 border-b pb-3"
-              style={{ borderColor: "#d8d1bd" }}
-            >
-              <input
-                value={domain}
-                onChange={(e) => setDomain(e.target.value)}
-                placeholder="store.gibun.at"
-                spellCheck={false}
-                className="flex-1 min-w-0 bg-transparent outline-none font-mono text-[15px]"
-              />
-              <button type="submit" disabled={loading} className="text-[22px] leading-none disabled:opacity-30 shrink-0 px-1" aria-label="Load store">
-                {loading ? "…" : "→"}
-              </button>
-            </form>
-          )}
-
-          {tab === "store" && (
-            <div className="space-y-2 -mt-4">
-              <div className="font-mono text-[11px] text-zinc-400">
-                Shopify + WooCommerce auto-import works instantly. Wix / Squarespace? Use Feed URL or CSV.
-              </div>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px]">
-                <span className="text-zinc-400">try:</span>
-                <button onClick={() => { setDomain("store.gibun.at"); fetchPreview("store.gibun.at"); }} className="text-zinc-500 underline underline-offset-4 hover:text-zinc-800">gibun · shopify</button>
-                <button onClick={() => { setDomain("barefootbuttons.com"); fetchPreview("barefootbuttons.com"); }} className="text-zinc-500 underline underline-offset-4 hover:text-zinc-800">barefootbuttons · woo</button>
-                <button onClick={() => { setDomain("jococups.com"); fetchPreview("jococups.com"); }} className="text-zinc-500 underline underline-offset-4 hover:text-zinc-800">joco · woo</button>
-              </div>
+          {/* source controls — directly on the page, no card */}
+          <div className="space-y-3">
+            <div className="flex rounded-full p-1 gap-1" style={{ background: "#f1efe9" }}>
+              {([
+                { id: "store", label: "Store URL", icon: <LinkIcon /> },
+                { id: "feed", label: "Feed URL", icon: <DocIcon /> },
+                { id: "csv", label: "CSV Upload", icon: <UploadIcon /> },
+              ] as { id: SourceTab; label: string; icon: React.ReactNode }[]).map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setTab(t.id)}
+                  className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-full text-[12.5px] font-medium transition ${tab === t.id ? "bg-white shadow-sm text-zinc-900" : "text-zinc-500 hover:text-zinc-800"}`}
+                >
+                  {t.icon}
+                  {t.label}
+                </button>
+              ))}
             </div>
-          )}
 
-          {tab === "feed" && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                fetchFeed(feedUrl);
-              }}
-              className="space-y-2"
-            >
-              <div className="flex items-center gap-2 border-b pb-3" style={{ borderColor: "#d8d1bd" }}>
+            {tab === "store" && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  fetchPreview(domain);
+                }}
+                className="flex gap-2"
+              >
+                <input
+                  value={domain}
+                  onChange={(e) => setDomain(e.target.value)}
+                  placeholder="store.gibun.at"
+                  spellCheck={false}
+                  className="flex-1 min-w-0 border rounded-xl px-3.5 py-2.5 outline-none font-mono text-[13px] bg-white focus:border-zinc-400"
+                  style={{ borderColor: LINE }}
+                />
+                <button type="submit" disabled={loading} className="px-4 rounded-xl text-white text-[13px] font-bold shrink-0 disabled:opacity-50" style={{ background: MOSS }}>
+                  {loading ? "…" : "Generate previews →"}
+                </button>
+              </form>
+            )}
+
+            {tab === "feed" && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  fetchFeed(feedUrl);
+                }}
+                className="flex gap-2"
+              >
                 <input
                   value={feedUrl}
                   onChange={(e) => setFeedUrl(e.target.value)}
                   placeholder="https://example.com/feed.xml"
                   spellCheck={false}
-                  className="flex-1 min-w-0 bg-transparent outline-none font-mono text-[13px]"
+                  className="flex-1 min-w-0 border rounded-xl px-3.5 py-2.5 outline-none font-mono text-[13px] bg-white focus:border-zinc-400"
+                  style={{ borderColor: LINE }}
                 />
-                <button type="submit" disabled={loading} className="text-[22px] leading-none disabled:opacity-30 shrink-0 px-1" aria-label="Load feed">
-                  {loading ? "…" : "→"}
+                <button type="submit" disabled={loading} className="px-4 rounded-xl text-white text-[13px] font-bold shrink-0 disabled:opacity-50" style={{ background: MOSS }}>
+                  {loading ? "…" : "Generate previews →"}
                 </button>
-              </div>
-              <div className="font-mono text-[11px] text-zinc-400">
-                Google Shopping / Facebook CSV or XML — any platform. We preview the first 200 rows.
-              </div>
-            </form>
-          )}
+              </form>
+            )}
 
-          {tab === "csv" && (
-            <div className="space-y-2">
-              <label className="flex items-center justify-between gap-3 border border-dashed rounded-xl px-4 py-3 cursor-pointer hover:bg-white" style={{ borderColor: "#d8d1bd" }}>
+            {tab === "csv" && (
+              <label className="flex items-center justify-between gap-3 border border-dashed rounded-xl px-4 py-3 cursor-pointer hover:bg-zinc-50" style={{ borderColor: "#d8d1bd" }}>
                 <span className="text-[13px]">{csvName ? csvName : "Drop a product CSV here or click to browse"}</span>
                 <span className="font-mono text-[11px] text-zinc-400 shrink-0">{loading ? "…" : "browse"}</span>
                 <input
@@ -409,11 +434,23 @@ export default function Home() {
                   }}
                 />
               </label>
-              <div className="font-mono text-[11px] text-zinc-400">
-                Headers like: id,title,description,price,link,image_link,brand,availability
-              </div>
+            )}
+
+            <div className="font-mono text-[11px] text-zinc-400">
+              {tab === "store" && "Shopify + WooCommerce auto-import works instantly."}
+              {tab === "feed" && "Google Shopping / Facebook CSV or XML — any platform. We preview the first 200 rows."}
+              {tab === "csv" && "Headers like: id,title,description,price,link,image_link,brand,availability"}
             </div>
-          )}
+
+            {tab === "store" && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px]">
+                <span className="text-zinc-400">try:</span>
+                <button onClick={() => { setDomain("store.gibun.at"); fetchPreview("store.gibun.at"); }} className="text-zinc-500 underline underline-offset-4 hover:text-zinc-800">gibun · shopify</button>
+                <button onClick={() => { setDomain("barefootbuttons.com"); fetchPreview("barefootbuttons.com"); }} className="text-zinc-500 underline underline-offset-4 hover:text-zinc-800">barefootbuttons · woo</button>
+                <button onClick={() => { setDomain("jococups.com"); fetchPreview("jococups.com"); }} className="text-zinc-500 underline underline-offset-4 hover:text-zinc-800">joco · woo</button>
+              </div>
+            )}
+          </div>
 
           {error && (
             <div className="rounded-xl border border-red-200 bg-red-50/60 px-4 py-3 space-y-1.5">
@@ -435,75 +472,196 @@ export default function Home() {
             </div>
           )}
 
-          {projectError && (
-            <div className="rounded-xl border border-red-200 bg-red-50/60 px-4 py-3 text-[13px] font-medium text-red-800">
-              {projectError}
-            </div>
-          )}
-
-          {data && single && (
-            <div className="space-y-5 pt-1">
-              <div className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-zinc-400">
-                {kit.name} — {data.totalPhysical} products — {uniques.length} visuals
-                {data.source === "woocommerce" ? " — via woo" : ""}
-                {data.source && data.source !== "shopify" && data.source !== "woocommerce" ? ` — via ${data.source === "csv" ? (csvName ?? "CSV") : `feed ${data.format ?? ""}`}` : ""}
-              </div>
-              {data.validation && (
-                <div className={`w-fit rounded-full px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.1em] ${data.validation.status === "blocked" ? "bg-red-100 text-red-800" : data.validation.status === "needs-review" ? "bg-amber-100 text-amber-800" : "bg-green-100 text-green-800"}`}>
-                  Catalog {data.validation.status === "blocked" ? `blocked · ${data.validation.errorCount} findings` : data.validation.status === "needs-review" ? "review needed" : "ready"}
+          {/* catalog status card */}
+          <div className="rounded-2xl border bg-white p-4" style={{ borderColor: LINE }}>
+            {!data || !single ? (
+              <div className="flex items-center gap-3">
+                <span className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 bg-zinc-100">
+                  <GridIcon dim />
+                </span>
+                <div className="leading-tight">
+                  <div className="text-[15px] font-bold tracking-tight">{loading ? "Reading catalog…" : "No catalog yet"}</div>
+                  <div className="font-mono text-[11px] text-zinc-400">load a store above to inspect it</div>
                 </div>
-              )}
-              <div className="flex items-baseline gap-5 text-[14px] font-medium">
-                {DEMO_TEMPLATES.map((t) => {
-                  const short = t.name.replace("Clean ", "").replace("Premium ", "");
-                  const isActive = t.id === templateId;
-                  return (
-                    <button
-                      key={t.id}
-                      onClick={() => setTemplateId(t.id)}
-                      className={isActive ? "underline underline-offset-8 decoration-2" : "text-zinc-400 hover:text-zinc-700"}
-                    >
-                      {short}
-                    </button>
-                  );
-                })}
-                {PLACEMENTS.map((p) => {
-                  const isActive = placement === p.id;
-                  return (
-                    <button
-                      key={p.id}
-                      onClick={() => setPlacement(p.id)}
-                      className={isActive ? "underline underline-offset-8 decoration-2" : "text-zinc-400 hover:text-zinc-700"}
-                    >
-                      {p.label}
-                    </button>
-                  );
-                })}
               </div>
-              <div className="flex items-center gap-6 pt-1">
-                <button onClick={() => saveProjectAndNavigate("/editor")} disabled={projectSaving} className="text-[14px] font-medium underline underline-offset-8 decoration-1 disabled:opacity-40">{projectSaving ? "Saving project…" : "Customize →"}</button>
-                <button onClick={() => setMode(mode === "raw" ? "enriched" : "raw")} className="font-mono text-[11px] text-zinc-400 hover:text-zinc-700 underline underline-offset-4">
-                  {mode === "raw" ? "show enriched" : "show raw"}
+            ) : (
+              <>
+                <div className="flex items-center gap-3">
+                  <span className="w-11 h-11 rounded-full flex items-center justify-center shrink-0" style={{ background: "#e7f0d8", color: MOSS }}>
+                    <CheckIcon />
+                  </span>
+                  <div className="leading-tight min-w-0">
+                    <div className="text-[15px] font-bold tracking-tight">Catalog found</div>
+                    <div className="font-mono text-[11px] text-zinc-500 truncate">
+                      {kit.name}
+                      {data.source === "woocommerce" ? " · via woo" : ""}
+                      {data.source && data.source !== "shopify" && data.source !== "woocommerce" ? ` · via ${data.source === "csv" ? (csvName ?? "CSV") : `feed ${data.format ?? ""}`}` : ""}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => saveProjectAndNavigate("/validate")}
+                    disabled={projectSaving}
+                    className="ml-auto p-2 rounded-full hover:bg-zinc-100 disabled:opacity-40 shrink-0 text-zinc-500"
+                    title="Open feed health"
+                    aria-label="Open feed health"
+                  >
+                    <ChevronIcon />
+                  </button>
+                </div>
+                <div className="flex items-stretch mt-3 pt-3 border-t" style={{ borderColor: "#f1efe9" }}>
+                  <div className="flex-1 leading-tight">
+                    <div className="text-[19px] font-bold tracking-tight">{data.totalPhysical}</div>
+                    <div className="font-mono text-[10px] text-zinc-400">products</div>
+                  </div>
+                  <div className="w-px mx-4" style={{ background: "#f1efe9" }} />
+                  <div className="flex-1 leading-tight">
+                    <div className="text-[19px] font-bold tracking-tight">{uniques.length}</div>
+                    <div className="font-mono text-[10px] text-zinc-400">visuals</div>
+                  </div>
+                  <div className="w-px mx-4" style={{ background: "#f1efe9" }} />
+                  <div className="flex-[1.4] leading-tight">
+                    {data.validation && data.validation.status !== "ready" ? (
+                      <>
+                        <div className="flex items-center gap-1.5 text-[13px] font-bold text-amber-700">
+                          <WarnIcon />
+                          {data.validation.errorCount + data.validation.warningCount} issue{(data.validation.errorCount + data.validation.warningCount) === 1 ? "" : "s"}
+                        </div>
+                        <div className="font-mono text-[10px] text-zinc-400 truncate" title={data.issues[0]}>
+                          {data.issues[0] ?? "needs review before Meta"}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-1.5 text-[13px] font-bold" style={{ color: MOSS }}>
+                          <CheckIcon small />
+                          No issues
+                        </div>
+                        <div className="font-mono text-[10px] text-zinc-400">feed healthy</div>
+                      </>
+                    )}
+                  </div>
+                </div>
+                {projectError && (
+                  <div className="pt-2 text-[12px] font-medium text-red-800">{projectError}</div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* preview styles card */}
+          {data && single && (
+            <div className="rounded-2xl border bg-white p-4 space-y-3" style={{ borderColor: LINE }}>
+              <div className="flex items-center gap-2.5">
+                <span className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 bg-zinc-100 text-zinc-600">
+                  <GridIcon />
+                </span>
+                <div className="leading-tight">
+                  <div className="text-[15px] font-bold tracking-tight">Preview styles</div>
+                  <div className="text-[12px] text-zinc-500">Choose a style to preview your products.</div>
+                </div>
+              </div>
+              <div>
+                <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-zinc-400 pb-1.5">Design</div>
+                <div className="flex gap-2.5">
+                  {TEMPLATES.map((t) => {
+                    const short = t.name.replace("Clean ", "").replace("Premium ", "");
+                    const isActive = t.id === templateId;
+                    return (
+                      <button key={t.id} onClick={() => setTemplateId(t.id)} className="shrink-0">
+                        <span
+                          className="block w-[68px] h-[68px] rounded-xl overflow-hidden border-2 bg-white"
+                          style={{ borderColor: isActive ? MOSS : "#e9e4d6" }}
+                        >
+                          <TemplateRenderer template={t} product={single} scale={68 / 1080} />
+                        </span>
+                        <span className={`block pt-1 text-[11px] ${isActive ? "font-bold text-zinc-900" : "text-zinc-500"}`}>{short}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-zinc-400 pb-1.5">Placement</div>
+                <div className="flex gap-2.5">
+                  {PLACEMENTS.map((p) => {
+                    const v = p.id === "portrait"
+                      ? { t: portraitVariant, w: 54 }
+                      : p.id === "story"
+                        ? { t: storyVariant, w: 38 }
+                        : { t: feedVariant, w: 68 };
+                    const isActive = placement === p.id;
+                    return (
+                      <button key={p.id} onClick={() => setPlacement(p.id)} className="shrink-0">
+                        <span
+                          className="flex items-end justify-center rounded-xl overflow-hidden border-2 bg-white"
+                          style={{ width: 68, height: 68, borderColor: isActive ? MOSS : "#e9e4d6" }}
+                        >
+                          <span className="block overflow-hidden" style={{ width: v.w, height: Math.round(v.w * (v.t.height / v.t.width)) }}>
+                            <TemplateRenderer template={v.t} product={single} scale={v.w / 1080} />
+                          </span>
+                        </span>
+                        <span className={`block pt-1 text-[11px] ${isActive ? "font-bold text-zinc-900" : "text-zinc-500"}`}>{p.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="flex items-center gap-5 pt-1 font-mono text-[11px]">
+                <button onClick={() => setMode(mode === "raw" ? "enriched" : "raw")} className="text-zinc-400 hover:text-zinc-700 underline underline-offset-4">
+                  {mode === "raw" ? "view enriched →" : "view raw data →"}
                 </button>
-                <button onClick={() => saveProjectAndNavigate("/validate")} disabled={projectSaving} className="font-mono text-[11px] text-zinc-400 hover:text-zinc-700 underline underline-offset-4 disabled:opacity-40">feed health →</button>
+                <button
+                  onClick={() => { if (!compareOn) setMode("enriched"); setCompareOn(!compareOn); }}
+                  className={`underline underline-offset-4 ${compareOn ? "text-zinc-800 font-semibold" : "text-zinc-400 hover:text-zinc-700"}`}
+                  title="Wipe between raw photo and forged creative"
+                >
+                  ⇔ compare
+                </button>
               </div>
             </div>
           )}
         </div>
 
-        {/* RIGHT — phone on a whisper of background */}
-        <div className="min-h-0 h-full flex items-center justify-center py-6">
+        {/* RIGHT — phone stays fixed while the left rail scrolls */}
+        <div className="flex items-center justify-center py-10 lg:sticky lg:top-[57px] lg:h-[calc(100vh-57px)] lg:py-0 min-h-[700px]">
           {!data || !single ? (
             <div className="text-sm text-zinc-400">{loading ? "Loading catalog…" : " "}</div>
           ) : (
             <div className="relative w-full h-full flex items-center justify-center">
-              {/* barely-there warmth so the phone grounds without a panel */}
+              {/* living warmth: hue sampled from the visible product photo,
+                  crossfaded via the registered --hero-glow property */}
               <div
                 className="absolute rounded-full pointer-events-none"
-                style={{ width: 460, height: 460, background: "radial-gradient(circle, rgba(58,90,30,0.07), transparent 65%)" }}
+                style={{
+                  width: 520,
+                  height: 520,
+                  background: "radial-gradient(circle, color-mix(in srgb, var(--hero-glow) 20%, transparent), transparent 65%)",
+                  transition: "--hero-glow 700ms ease",
+                  "--hero-glow": glow ? `rgb(${glow})` : "#3a5a1e",
+                } as React.CSSProperties}
               />
+              {/* hidden sampler: same bytes as the creative (browser cache) */}
+              {glowSrc ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={glowSrc}
+                  src={glowSrc}
+                  crossOrigin="anonymous"
+                  alt=""
+                  aria-hidden
+                  className="hidden"
+                  onLoad={(e) => {
+                    if (glowCache.current.has(glowSrc)) return;
+                    const g = sampleImageColor(e.currentTarget);
+                    if (g) {
+                      glowCache.current.set(glowSrc, g);
+                      setGlow((prev) => (prev === g ? prev : g));
+                    }
+                  }}
+                />
+              ) : null}
               <div className="relative z-10">
-                <PhoneCutout>
+                <PhoneHero fidelity="atelier">
                   {placement === "story" ? (
                     <StoryScreen product={single} brand={kit.name} logoUrl={kit.logoUrl} mode={mode} template={storyVariant} />
                   ) : (
@@ -518,9 +676,10 @@ export default function Home() {
                       onTrackScroll={placement === "carousel" ? onTrackScroll : undefined}
                       carouselIdx={carouselIdx}
                       onDot={goToCard}
+                      compare={compareOn ? { pos: comparePos, onPos: setComparePos } : undefined}
                     />
                   )}
-                </PhoneCutout>
+                </PhoneHero>
               </div>
             </div>
           )}
@@ -547,187 +706,92 @@ function modeCount(values: (string | undefined)[]): string {
 
 /* ————————— Phone cutout ————————— */
 
-/* ————————— Phone cutout ————————— */
-/* Lab variation 02: floating ¾ tilt. True 3D slab (front / back / core /
-   4 edge walls) with 01's photoreal titanium recipe on the front face.
-   Screen content (incl. the carousel track) renders inside untouched. */
+/* ————————— left-rail icons ————————— */
 
-const PHONE_W = 288;
-const PHONE_H = 600;
-const PHONE_T = 18;
-const PHONE_HALF = PHONE_T / 2;
-
-function PhoneCutout({ children }: { children: React.ReactNode }) {
-  // Near-level rest tilt: bottom edge stays shut (its face + interior reveal
-  // grow fast with downward angle); hover still adds ±5° of life.
-  const [tilt, setTilt] = useState({ x: 1, y: -14 });
-  const [dragging, setDragging] = useState(false);
+function RailIcon({ children, size = 15 }: { children: React.ReactNode; size?: number }) {
   return (
-    <div
-      className="relative shrink-0 flex items-center justify-center cursor-grab active:cursor-grabbing"
-      style={{ perspective: 2000, width: 340, height: 656 }}
-      onMouseMove={(e) => {
-        if (dragging) return; // freeze while swiping the carousel — otherwise
-        // the phone chases the cursor mid-drag and the image seems to jump
-        const r = e.currentTarget.getBoundingClientRect();
-        const px = (e.clientX - r.left) / r.width - 0.5;
-        const py = (e.clientY - r.top) / r.height - 0.5;
-        setTilt({ x: 1 - py * 10, y: -14 + px * 14 });
-      }}
-      onPointerDown={() => setDragging(true)}
-      onPointerUp={() => setDragging(false)}
-      onPointerCancel={() => setDragging(false)}
-      onMouseLeave={() => { setDragging(false); setTilt({ x: 1, y: -14 }); }}
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.9}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="shrink-0"
+      aria-hidden
     >
-      {/* two-layer floor shadow, key light top-left: wide faint ambient ramp
-          + tighter core that breathes in sync with the 7s levitation bob.
-          Opacity-only animation so it never fights the tilt transform. */}
-      <div className="absolute bottom-0 left-1/2 w-[240px] h-[26px] rounded-[100%] pointer-events-none"
-        style={{ background: "rgba(25,23,18,0.16)", filter: "blur(26px)", transform: `translateX(calc(-50% + 16px + ${tilt.y * 1.6}px))` }} />
-      <div className="absolute bottom-2 left-1/2 w-[160px] h-[11px] rounded-[100%] pointer-events-none"
-        style={{ background: "#191712", opacity: 0.3, filter: "blur(9px)", transform: `translateX(calc(-50% + 10px + ${tilt.y * 1.2}px))`, animation: "phone-shadow-breathe 7s ease-in-out infinite" }} />
+      {children}
+    </svg>
+  );
+}
 
-      {/* gentle levitation — half-distance bob so the phone never reads as jumping */}
-      <div style={{ animation: "phone-floaty 7s ease-in-out infinite" }}>
-        {/* TILT only — driven by hover state */}
-        <div className="preserve-3d relative" style={{
-          width: PHONE_W, height: PHONE_H,
-          transform: `rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) rotateZ(1deg)`,
-          transition: "transform 280ms ease-out",
-        }}>
-          {/* back plate (dark titanium + camera plateau), inset so it never
-              peeks past the front silhouette in corners */}
-          <div className="absolute rounded-[52px] brushed" style={{
-            inset: 2,
-            transform: `translateZ(${-PHONE_HALF}px)`,
-            background: "linear-gradient(150deg,#3a3733,#171614 60%,#2b2925)",
-            boxShadow: "inset 0 1px 1px rgba(255,255,255,0.25)",
-          }}>
-            <div className="absolute left-5 top-5 w-[104px] h-[104px] rounded-[28px]" style={{
-              background: "linear-gradient(150deg,#4a463f,#1c1a17)",
-              boxShadow: "inset 0 1px 1px rgba(255,255,255,0.3), 0 4px 10px rgba(0,0,0,0.4)",
-            }}>
-              <div className="absolute left-3 top-3 w-[42px] h-[42px] rounded-full bg-black" style={{ boxShadow: "inset 0 0 0 3px #2c2a26, inset 0 0 0 5px #0a0a0a" }}>
-                <div className="absolute top-[8px] left-[8px] w-[10px] h-[10px] rounded-full" style={{ background: "radial-gradient(circle at 35% 35%, #2a4a7f, #000 70%)" }} />
-              </div>
-              <div className="absolute right-3 bottom-3 w-[42px] h-[42px] rounded-full bg-black" style={{ boxShadow: "inset 0 0 0 3px #2c2a26, inset 0 0 0 5px #0a0a0a" }}>
-                <div className="absolute top-[8px] left-[8px] w-[10px] h-[10px] rounded-full" style={{ background: "radial-gradient(circle at 35% 35%, #2a4a7f, #000 70%)" }} />
-              </div>
-            </div>
-            <div className="absolute inset-0 flex items-center justify-center font-bold text-white/25 text-[40px]">◍</div>
-          </div>
+function LinkIcon() {
+  return (
+    <RailIcon>
+      <path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5" />
+      <path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5" />
+    </RailIcon>
+  );
+}
 
-          {/* solid core — fills the slab so corner seams never see through.
-              Height 96% (top-anchored): a full-height core's dark bottom/right
-              edge projects past the front silhouette under perspective and reads
-              as extra chin — pulled up it hides behind the opaque front face.
-              Walls stay as-is: they land on the full-size front/back faces, and
-              the full-height back plate still backs every corner gap, so no
-              see-through lines can open at the bottom or right. */}
-          <div className="absolute rounded-[54px] pointer-events-none" style={{
-            inset: 0,
-            height: "96%",
-            transform: "translateZ(0)",
-            background: "linear-gradient(150deg,#2e2c28,#131211 55%,#232120)",
-          }} />
+function DocIcon() {
+  return (
+    <RailIcon>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6" />
+      <path d="M9 13h6M9 17h6" />
+    </RailIcon>
+  );
+}
 
-          {/* edge walls (straight sections only — clear of the corner radius,
-              ends faded via mask so highlights dissolve into the curves.
-              Side walls flush with the body (nothing past the silhouette at
-              rest — hover rotation still reveals the edge faces dynamically) */}
-          <div className="absolute" style={{
-            top: 58, bottom: 58, right: "0px", width: PHONE_T,
-            transform: "rotateY(90deg)",
-            background: "linear-gradient(90deg, rgba(255,255,255,0.5) 0%, #6b665c 18%, #2b2925 60%, #0f0e0c 100%)",
-            WebkitMaskImage: "linear-gradient(180deg, transparent 0, black 30px, black calc(100% - 30px), transparent 100%)",
-            maskImage: "linear-gradient(180deg, transparent 0, black 30px, black calc(100% - 30px), transparent 100%)",
-          }}>
-            <div className="absolute left-0 right-0" style={{ top: 24, height: 3, background: "#b9b2a2", boxShadow: "0 1px 1px rgba(0,0,0,0.45)" }} />
-            <div className="absolute left-0 right-0" style={{ bottom: 24, height: 3, background: "#8f887a", boxShadow: "0 1px 1px rgba(0,0,0,0.45)" }} />
-          </div>
-          <div className="absolute" style={{
-            top: 58, bottom: 58, left: "0px", width: PHONE_T,
-            transform: "rotateY(90deg)",
-            background: "linear-gradient(90deg, #0f0e0c 0%, #2b2925 55%, #57534a 100%)",
-            WebkitMaskImage: "linear-gradient(180deg, transparent 0, black 30px, black calc(100% - 30px), transparent 100%)",
-            maskImage: "linear-gradient(180deg, transparent 0, black 30px, black calc(100% - 30px), transparent 100%)",
-          }}>
-            <div className="absolute left-0 right-0" style={{ top: 24, height: 3, background: "#b9b2a2", boxShadow: "0 1px 1px rgba(0,0,0,0.45)" }} />
-            <div className="absolute left-0 right-0" style={{ bottom: 24, height: 3, background: "#8f887a", boxShadow: "0 1px 1px rgba(0,0,0,0.45)" }} />
-          </div>
-          <div className="absolute" style={{
-            left: 58, right: 58, top: 0, height: PHONE_T, marginTop: -PHONE_HALF,
-            transform: "rotateX(90deg)",
-            background: "linear-gradient(180deg, #8d877b 0%, #2b2925 70%, #0f0e0c 100%)",
-            WebkitMaskImage: "linear-gradient(90deg, transparent 0, black 34px, black calc(100% - 34px), transparent 100%)",
-            maskImage: "linear-gradient(90deg, transparent 0, black 34px, black calc(100% - 34px), transparent 100%)",
-          }}>
-            <div className="absolute top-0 bottom-0" style={{ left: 26, width: 3, background: "#b9b2a2" }} />
-            <div className="absolute top-0 bottom-0" style={{ right: 26, width: 3, background: "#b9b2a2" }} />
-          </div>
-          {/* bottom wall — top 96% (not 100%): at 100% the wall's dark band
-              hangs ~9px past the body and reads as chin; tucked up it hides
-              behind the opaque front face */}
-          <div className="absolute" style={{
-            left: 58, right: 58, top: "96%", height: PHONE_T, marginTop: -PHONE_HALF,
-            transform: "rotateX(90deg)",
-            background: "linear-gradient(180deg, #0f0e0c 0%, #2b2925 60%, #57534a 100%)",
-            WebkitMaskImage: "linear-gradient(90deg, transparent 0, black 34px, black calc(100% - 34px), transparent 100%)",
-            maskImage: "linear-gradient(90deg, transparent 0, black 34px, black calc(100% - 34px), transparent 100%)",
-          }}>
-            <div className="absolute top-0 bottom-0" style={{ left: 26, width: 3, background: "#8f887a" }} />
-            <div className="absolute top-0 bottom-0" style={{ right: 26, width: 3, background: "#8f887a" }} />
-          </div>
+function UploadIcon() {
+  return (
+    <RailIcon>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <path d="M17 8l-5-5-5 5" />
+      <path d="M12 3v12" />
+    </RailIcon>
+  );
+}
 
-          {/* front face — photoreal titanium: unibody + chamfer + gasket */}
-          <div className="absolute inset-0 rounded-[54px] brushed" style={{
-            transform: `translateZ(${PHONE_HALF}px)`,
-            background: "linear-gradient(148deg, #9a9488 0%, #4c4841 12%, #211f1c 28%, #3d3a35 48%, #131211 66%, #5c5850 84%, #2c2a26 100%)",
-            padding: 2.5,
-            boxShadow: "14px 26px 44px -10px rgba(25,23,18,0.32)",
-          }}>
-            {/* antenna bands */}
-            <div className="absolute left-[52px] top-0 w-[36px] h-[3px] rounded-full bg-[#b9b2a2] z-20" style={{ boxShadow: "inset 0 1px 1px rgba(0,0,0,0.3)" }} />
-            <div className="absolute right-[52px] top-0 w-[36px] h-[3px] rounded-full bg-[#b9b2a2] z-20" style={{ boxShadow: "inset 0 1px 1px rgba(0,0,0,0.3)" }} />
-            <div className="absolute left-[52px] -bottom-0 w-[36px] h-[3px] rounded-full bg-[#8f887a] z-20" />
-            <div className="absolute right-[52px] -bottom-0 w-[36px] h-[3px] rounded-full bg-[#8f887a] z-20" />
-            {/* milled side buttons — ride the front plane so they tilt along */}
-            <div className="absolute -left-[2.5px] top-[104px] w-[3.5px] h-[26px] rounded-l-md z-10" style={{ background: "linear-gradient(90deg,#6e695f,#35322d)" }} />
-            <div className="absolute -left-[2.5px] top-[140px] w-[3.5px] h-[48px] rounded-l-md z-10" style={{ background: "linear-gradient(90deg,#6e695f,#35322d)" }} />
-            <div className="absolute -left-[2.5px] top-[194px] w-[3.5px] h-[48px] rounded-l-md z-10" style={{ background: "linear-gradient(90deg,#6e695f,#35322d)" }} />
-            <div className="absolute -right-[2.5px] top-[150px] w-[3.5px] h-[64px] rounded-r-md z-10" style={{ background: "linear-gradient(270deg,#6e695f,#35322d)" }} />
-            {/* chamfer — polished edge that catches light */}
-            <div className="w-full h-full rounded-[51.5px]" style={{
-              background: "linear-gradient(148deg, rgba(255,255,255,0.75), rgba(255,255,255,0.08) 18%, rgba(0,0,0,0.35) 55%, rgba(255,255,255,0.28) 85%, rgba(255,255,255,0.55))",
-              padding: 1.5,
-            }}>
-              <div className="w-full h-full rounded-[50px] bg-[#0a0908]" style={{ padding: 8, boxShadow: "inset 0 2px 6px rgba(0,0,0,0.9)" }}>
-                <div className="relative w-full h-full rounded-[43px] overflow-hidden bg-white flex flex-col min-h-0"
-                  style={{ boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.5)" }}>
-                  {children}
-                  {/* angle-reactive showroom sheen + curved-glass vignette */}
-                  <div className="absolute inset-0 pointer-events-none z-20" style={{
-                    background: `linear-gradient(${(105 + tilt.y * 1.5)}deg, transparent 30%, rgba(255,255,255,0.30) 42%, rgba(255,255,255,0.08) 50%, transparent 60%)`,
-                  }} />
-                  <div className="absolute inset-0 pointer-events-none z-20" style={{
-                    boxShadow: "inset 0 1px 1px rgba(255,255,255,0.6), inset 0 0 30px rgba(0,0,0,0.16)",
-                    borderRadius: "inherit",
-                  }} />
-                  {/* dynamic island with lens glint */}
-                  <div className="absolute top-[11px] left-1/2 -translate-x-1/2 w-[88px] h-[25px] bg-black rounded-full z-30 flex items-center justify-end pr-3 gap-1.5"
-                    style={{ boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.08), 0 1px 2px rgba(0,0,0,0.5)" }}>
-                    <span className="w-[9px] h-[9px] rounded-full relative overflow-hidden" style={{ background: "radial-gradient(circle at 35% 35%, #1e3a5f 0%, #0a1628 45%, #000 70%)" }}>
-                      <span className="absolute top-[1.5px] left-[1.5px] w-[2.5px] h-[2.5px] rounded-full bg-blue-400/80 blur-[0.5px]" />
-                    </span>
-                    <span className="w-[5px] h-[5px] rounded-full bg-[#1a1d22]" style={{ boxShadow: "inset 0 0 1px rgba(120,180,255,0.5)" }} />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+function GridIcon({ dim }: { dim?: boolean }) {
+  return (
+    <span className={dim ? "text-zinc-400" : undefined}>
+      <RailIcon size={17}>
+        <rect x="3" y="3" width="7" height="7" rx="1.5" />
+        <rect x="14" y="3" width="7" height="7" rx="1.5" />
+        <rect x="3" y="14" width="7" height="7" rx="1.5" />
+        <rect x="14" y="14" width="7" height="7" rx="1.5" />
+      </RailIcon>
+    </span>
+  );
+}
+
+function CheckIcon({ small }: { small?: boolean }) {
+  return (
+    <RailIcon size={small ? 15 : 20}>
+      <path d="M8 12.5l2.7 2.7L16.5 9" />
+    </RailIcon>
+  );
+}
+
+function WarnIcon() {
+  return (
+    <RailIcon size={17}>
+      <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
+    </RailIcon>
+  );
+}
+
+function ChevronIcon() {
+  return (
+    <RailIcon size={18}>
+      <path d="M9 6l6 6-6 6" />
+    </RailIcon>
   );
 }
 
@@ -768,8 +832,91 @@ function PostHeader({ brand, logoUrl }: { brand: string; logoUrl: string | null 
   );
 }
 
+/* ————————— Creative slide with optional raw/forged wipe ————————— */
+/* Forged creative as the base; the raw catalog photo reveals left of the
+   handle. Drag target is the handle only (touch-none) so the carousel swipe
+   keeps working everywhere else. No compare in raw mode (raw-vs-raw). */
+
+function CreativeSlide({
+  product, mode, template, scale, compare,
+}: {
+  product: FeedRow;
+  mode: "enriched" | "raw";
+  template: Parameters<typeof TemplateRenderer>[0]["template"];
+  scale: number;
+  compare?: { pos: number; onPos: (n: number) => void };
+}) {
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [drag, setDrag] = useState(false);
+  const showCompare = mode === "enriched" && compare && product.image_link;
+  const move = (clientX: number) => {
+    const r = boxRef.current?.getBoundingClientRect();
+    if (!r || r.width === 0 || !compare) return;
+    const raw = ((clientX - r.left) / r.width) * 100;
+    if (!Number.isFinite(raw)) return;
+    const c = Math.min(100, Math.max(0, raw));
+    compare.onPos(c < 5 ? 0 : c > 95 ? 100 : c);
+  };
+  return (
+    <div ref={boxRef} className="w-full aspect-square overflow-hidden shrink-0 relative select-none">
+      {mode === "raw" ? <RawFill product={product} /> : <TemplateRenderer template={template} product={product} scale={scale} />}
+      {showCompare && compare && (
+        <>
+          {/* raw reveal: the catalog file full-bleed against the designed cell.
+              Opaque WHITE backing — transparent-background packshots
+              (white-that-is-actually-alpha) must show white, never the
+              forged layers beneath. */}
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{ clipPath: `inset(0 ${100 - compare.pos}% 0 0)`, background: "#ffffff", zIndex: 10 }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={product.image_link}
+              alt=""
+              draggable={false}
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+          </div>
+          <span
+            className="absolute top-2 left-2 text-[9px] font-bold rounded-full px-2 py-0.5 pointer-events-none bg-white/85 text-zinc-700"
+            style={{ opacity: compare.pos > 12 ? 1 : 0, transition: "opacity 200ms", zIndex: 20 }}
+          >
+            RAW
+          </span>
+          <span
+            className="absolute top-2 right-2 text-[9px] font-bold text-white rounded-full px-2 py-0.5 pointer-events-none"
+            style={{ background: "rgba(25,23,18,0.85)", opacity: compare.pos < 88 ? 1 : 0, transition: "opacity 200ms", zIndex: 20 }}
+          >
+            FORGED ✓
+          </span>
+          {/* handle: a real 44px grab box (a 0-width strip with
+              pointer-events-none children is unhittable) + pointer capture
+              so fast drags can't escape onto the template layers */}
+          <div
+            className="absolute top-0 bottom-0 w-[44px] -translate-x-1/2 touch-none select-none"
+            style={{ left: `${compare.pos}%`, cursor: "ew-resize", zIndex: 20 }}
+            onPointerDown={(e) => { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* capture unsupported — drag still works */ } setDrag(true); move(e.clientX); }}
+            onPointerMove={(e) => { if (drag) move(e.clientX); }}
+            onPointerUp={() => setDrag(false)}
+            onPointerCancel={() => setDrag(false)}
+          >
+            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-[2.5px] bg-white pointer-events-none" style={{ boxShadow: "0 0 8px rgba(0,0,0,0.35)" }} />
+            <div
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[34px] h-[34px] rounded-full bg-white flex items-center justify-center font-bold text-zinc-700 text-[13px] pointer-events-none"
+              style={{ boxShadow: "0 4px 14px rgba(0,0,0,0.35)" }}
+            >
+              ⇔
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function FeedScreen({
-  products, carousel, brand, logoUrl, mode, template, trackRef, onTrackScroll, carouselIdx, onDot,
+  products, carousel, brand, logoUrl, mode, template, trackRef, onTrackScroll, carouselIdx, onDot, compare,
 }: {
   products: FeedRow[];
   carousel: boolean;
@@ -781,11 +928,18 @@ function FeedScreen({
   onTrackScroll?: () => void;
   carouselIdx: number;
   onDot: (i: number) => void;
+  compare?: { pos: number; onPos: (n: number) => void };
 }) {
   const cards = (carousel ? products.slice(0, 12) : products.slice(0, 1));
   const active = cards[Math.min(carouselIdx, cards.length - 1)] ?? cards[0];
   const handle = brand.toLowerCase().replace(/[^a-z0-9]+/g, "") || "shop";
   const scale = 0.252; // 280px screen width / 1080 template
+  // Ad CTA pulse: ink at rest, brand moss 4s after mount.
+  const [ctaOn, setCtaOn] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setCtaOn(true), 4000);
+    return () => clearTimeout(t);
+  }, []);
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-white">
       <StatusBar />
@@ -794,17 +948,28 @@ function FeedScreen({
         <div ref={trackRef} onScroll={onTrackScroll} className="flex overflow-x-auto snap-x snap-mandatory shrink-0" style={{ scrollbarWidth: "none" }}>
           {cards.map((p) => (
             <div key={p.id} className="snap-center shrink-0 w-full">
-              <div className="w-full aspect-square overflow-hidden">
-                {mode === "raw" ? <RawFill product={p} /> : <TemplateRenderer template={template} product={p} scale={scale} />}
-              </div>
+              <CreativeSlide product={p} mode={mode} template={template} scale={scale} compare={compare} />
             </div>
           ))}
         </div>
       ) : (
-        <div className="w-full aspect-square overflow-hidden shrink-0">
-          {active && (mode === "raw" ? <RawFill product={active} /> : <TemplateRenderer template={template} product={active} scale={scale} />)}
-        </div>
+        active ? <CreativeSlide product={active} mode={mode} template={template} scale={scale} compare={compare} /> : null
       )}
+      {/* IG ad CTA — white/black at rest, brand moss after 4s */}
+      <div
+        className="flex items-center justify-between pl-3 pr-2.5 shrink-0"
+        style={{
+          background: ctaOn ? MOSS : "#ffffff",
+          color: ctaOn ? "#ffffff" : INK,
+          borderBottom: ctaOn ? "1px solid transparent" : "1px solid #f4f4f5",
+          transition: "background-color 900ms ease, color 900ms ease, border-color 900ms ease",
+          paddingTop: 12,
+          paddingBottom: 12,
+        }}
+      >
+        <span className="text-[13.5px] font-semibold tracking-tight">Shop Now</span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5l7 7-7 7" /></svg>
+      </div>
       <div className="px-2.5 pt-2 flex items-center shrink-0">
         <span className="flex items-center gap-3 text-[20px] leading-none">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="#ff3040" stroke="#ff3040" strokeWidth="1.5"><path d="M12 21s-7.5-4.6-10-9.3C.4 8.6 2.3 5 5.7 5c2 0 3.4 1.1 4.3 2.6h4C15 6.1 16.4 5 18.4 5c3.4 0 5.3 3.6 3.7 6.7C19.5 16.4 12 21 12 21z" transform="scale(0.92) translate(1,1)" /></svg>
@@ -823,9 +988,9 @@ function FeedScreen({
         </span>
       </div>
       <div className="px-2.5 pt-1 text-[12px] font-semibold shrink-0">2,314 likes</div>
-      {/* caption locked to exactly 2 lines: long/short descriptions render the
-          same text block, so the shop card below never shifts */}
-      <div className="px-2.5 pt-0.5 text-[12px] leading-snug flex-1 min-h-0 overflow-hidden">
+      {/* caption locked to exactly 2 lines + breathing room below, so every
+          product renders the same text block above the tab bar */}
+      <div className="px-2.5 pt-0.5 pb-5 text-[12px] leading-snug flex-1 min-h-0 overflow-hidden">
         {/* inline clamp (not utilities): guarantees -webkit-box isn't overridden
             and min-height applies — exactly 2 lines for every product */}
         <span style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", minHeight: "2.75em" }}>
@@ -833,25 +998,8 @@ function FeedScreen({
           {active && <span>{active.title} ✨ Tap to shop — <span className="text-zinc-500">#{handle} #newin</span></span>}
         </span>
       </div>
-      <div className="mx-2.5 mb-2.5 mt-1 rounded-xl border overflow-hidden shrink-0" style={{ borderColor: LINE }}>
-        <div className="flex items-center gap-2 px-2.5 h-[50px]" style={{ background: PORCELAIN }}>
-          <div className="min-w-0 flex-1 leading-tight">
-            <div className="text-[11.5px] font-semibold truncate">{active?.title}</div>
-            <div className="font-mono text-[10px] text-zinc-500">{active?.price}</div>
-          </div>
-          <span className="text-[11.5px] font-bold text-white rounded-full px-3 py-1.5 shrink-0" style={{ background: INK }}>Shop Now</span>
-        </div>
-      </div>
       {/* IG tab bar */}
-      <div className="flex items-center justify-around py-2 border-t bg-white shrink-0 text-[19px]">
-        <span>⌂</span><span className="opacity-30">⚲</span><span className="opacity-30">▣</span><span className="opacity-30">🎬</span>
-        <span className="w-[20px] h-[20px] rounded-full bg-zinc-200 overflow-hidden">
-          {logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={logoUrl} alt="" className="w-full h-full object-cover" />
-          ) : null}
-        </span>
-      </div>
+      <IgTabBar />
     </div>
   );
 }

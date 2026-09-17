@@ -36,6 +36,8 @@ Dependencies are prerequisites, not just related links. Unknown IDs, duplicate I
 
 Drag a card onto another step column or slice row to move it. In local dev (`npm run dev`) the move is saved to the story's Markdown file — the `step` frontmatter field, plus the `slice` field with the file relocated into the target slice directory — and the map revalidates before saving. Production builds are read-only, so a failed save reverts the card and reports the error. Story IDs never change, so dependencies and notes keep working.
 
+Drag a slice by its grip handle to reorder it. In local dev the new sequence is saved to each slice `index.md` as `order: 0..n` and revalidated; open slices stay grouped above finished ones regardless of order. Clear the slice filter first — grips are hidden while filtered. Editing `order` by hand works the same way.
+
 ## Development and delivery
 
 `npm run dev` validates and bundles the Markdown, then watches `docs/slices` for changes. Valid edits refresh the generated data and Next.js view. Invalid edits are reported in the terminal and leave the last valid view in place until corrected.

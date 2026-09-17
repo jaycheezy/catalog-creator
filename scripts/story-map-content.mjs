@@ -127,6 +127,18 @@ function setFrontmatterField(source, field, value) {
   if (!found) throw new Error(`missing frontmatter field ${field}`);
   return lines.join('\n');
 }
+function setFrontmatterInt(source, field, value) {
+  const lines = source.split('\n');
+  if (lines[0].trim() !== '---') throw new Error('YAML frontmatter is required');
+  const end = lines.findIndex((line, i) => i > 0 && line.trim() === '---');
+  if (end < 0) throw new Error('YAML frontmatter is required');
+  let found = false;
+  for (let i = 1; i < end; i++) {
+    if (new RegExp(`^${field}:`).test(lines[i])) { lines[i] = `${field}: ${value}`; found = true; }
+  }
+  if (!found) throw new Error(`missing frontmatter field ${field}`);
+  return lines.join('\n');
+}
 export function applyStoryMove(files, move, context = {}) {
   const { id, slice, step } = move;
   const steps = context.steps ?? ['connect', 'validate', 'design', 'variants', 'feed', 'publish', 'test'];
@@ -168,6 +180,26 @@ export function applyStoryStatus(files, change) {
   const next = files.map((file, i) => i === index ? { path: file.path, source } : file);
   compileStoryMap(next);
   return { files: next, path: files[index].path, changed: true };
+}
+export function applySliceOrder(files, order) {
+  if (!Array.isArray(order) || order.length === 0 || !order.every(id => typeof id === 'string' && id.length > 0)) {
+    throw new Error('order must be a non-empty array of slice ids');
+  }
+  if (new Set(order).size !== order.length) throw new Error('order contains duplicate slice ids');
+  const indexFiles = files.filter(file => /^docs\/slices\/[^/]+\/index\.md$/.test(file.path));
+  const ids = indexFiles.map(file => file.path.split('/')[2]);
+  if (order.length !== ids.length || !order.every(id => ids.includes(id))) {
+    throw new Error('order must list every slice exactly once');
+  }
+  const next = files.map(file => {
+    const match = /^docs\/slices\/([^/]+)\/index\.md$/.exec(file.path);
+    if (!match) return file;
+    const source = setFrontmatterInt(file.source, 'order', order.indexOf(match[1]));
+    return source === file.source ? file : { path: file.path, source };
+  });
+  compileStoryMap(next);
+  const changed = next.filter((file, i) => file.source !== files[i].source).map(file => file.path);
+  return { files: next, changed };
 }
 export function generateStoryMap(root = process.cwd()) {
   const catalog = readStoryMap(root);

@@ -10,6 +10,20 @@ export type BrandKit = {
   source: "context.dev" | "heuristic";
 };
 
+/* Known-brand logo overrides: exact artwork beats a favicon guess.
+   Keyed by host substring, so subdomains (store.gibun.at) match. */
+export const KNOWN_LOGOS: Record<string, string> = {
+  gibun: "https://store.gibun.at/cdn/shop/files/logo_without_bg_260x.png?v=1715673474",
+};
+
+export function knownLogoFor(host: string): string | null {
+  const h = host.toLowerCase();
+  for (const [key, url] of Object.entries(KNOWN_LOGOS)) {
+    if (h.includes(key)) return url;
+  }
+  return null;
+}
+
 function hashHue(s: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
@@ -36,7 +50,8 @@ export function heuristicBrandKit(domain: string, vendor?: string): BrandKit {
     accent,
     accentInk: "#ffffff",
     softBg,
-    logoUrl: `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=128`,
+    logoUrl: knownLogoFor(clean)
+      ?? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=128`,
     source: "heuristic",
   };
 }

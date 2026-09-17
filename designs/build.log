@@ -1,0 +1,229 @@
+
+[33m  ╭───────────────────────────────────────╮[39m
+[33m  │                                       │[39m
+[33m  │[39m  Update available: [2m0.3.6[22m → [32m[1m0.3.7[22m[39m      [33m│[39m
+[33m  │[39m  Run [36mnpm i -g @pen.dev/cli[39m to update  [33m│[39m
+[33m  │                                       │[39m
+[33m  ╰───────────────────────────────────────╯[39m
+
+[INFO] Starting pen.dev (headless)...
+[INFO] Ready.
+
+[1mpen.dev Interactive Shell[22m
+[2mFile: /Users/jason/Documents/Sites/catalog-forge/designs/editor-playground.pen[22m
+[2mType tool calls like: read_skill({ path: "pen-schema.md" })[22m
+[2mType save() to save, exit() to quit.[22m
+
+[36mpen[39m [2m>[22m OK
+
+Global variables (e.g. xbId) carry over to subsequent calls!
+
+## Created nodes by name
+Ids are strings - quote them when used in code. Entries marked `(= variable)` are also held by that global variable, usable directly in later calls:
+```
+"Editor Window": "FmkTG" (= rootId)
+"Header": "L0d8bJ" (= hdrId)
+"Header Left": "qe7Ay" (= lhId)
+"Wordmark": "u3oOI"
+"Editor Pill": "dWmhE" (= epId)
+"Editor Label": "cJo00"
+"Saved Pill": "m1Rp8I" (= svId)
+"Saved Dot": "qx3AG"
+"Saved Label": "ZozxY"
+"Header Right": "MndLw" (= rhId)
+"Zoom": "VJxDb" (= zmId)
+"Zoom Out": "IBeH0"
+"Zoom Value": "bm45J"
+"Zoom In": "f6CNV"
+"JSON Button": "v6KYB" (= jbId)
+"JSON Label": "f83zq"
+"Save Button": "mXwG8" (= sbId)
+"Save Label": "T9Fnk"
+"Export Button": "xXEhk" (= xbId)
+"Export Label": "dr7kJ"
+```
+
+## Print output
+FmkTG
+
+
+OK
+
+Global variables (e.g. rightId) carry over to subsequent calls!
+
+## Created nodes by name
+Ids are strings - quote them when used in code. Entries marked `(= variable)` are also held by that global variable, usable directly in later calls:
+```
+"Domain Strip": "VGgbv" (= domId)
+"Domain Label": "vpsQf"
+"Domain Input": "HIB3t" (= diId)
+"Domain Value": "yewRc"
+"Load Button": "dNuid" (= lbId)
+"Load Label": "o5YUr"
+"Body": "PY3D6" (= bodyId)
+"Layers Panel": "jGhEa" (= leftId)
+"Canvas Area": "P9TNSE" (= midId)
+"Properties Panel": "BYM1C" (= rightId)
+```
+
+## Print output
+PY3D6
+
+
+OK
+
+Global variables (e.g. bbId) carry over to subsequent calls!
+
+## Created nodes by name
+Ids are strings - quote them when used in code. Entries marked `(= variable)` are also held by that global variable, usable directly in later calls:
+```
+"Layers Head": "tfxdi" (= lh2Id)
+"Layers Title": "hptuh"
+"Canvas Size": "zdSLy"
+"Product Image Card": "IEuR8"
+"Product Image Icon": "dLcgD"
+"Product Image Glyph": "jqqDh"
+"Product Image Texts": "GBRrw"
+"Product Image Name": "K3UqiL"
+"Product Image Meta": "Yk3b6"
+"Product Image Actions": "o6qqo"
+"Title Card": "ut7D7"
+"Title Icon": "WYliJ"
+"Title Glyph": "EH6aD"
+"Title Texts": "Fcr7C"
+"Title Name": "N0PDs"
+"Title Meta": "Yemgs"
+"Title Actions": "j7EYdN"
+"Price Badge Card": "dUuTZ" (= cardId)
+"Price Badge Icon": "mYRMB" (= icId)
+"Price Badge Glyph": "HTKOL"
+"Price Badge Texts": "XFceB" (= txId)
+"Price Badge Name": "qLDXp"
+"Price Badge Meta": "aTj8k"
+"Price Badge Actions": "NAx8Z"
+"Add Box": "rJYjm" (= addId)
+"Add Title": "R8xLcJ"
+"Add Row": "ucYj9" (= arId)
+"+ Text": "FG8Fj"
+"+ Text Label": "XVX08"
+"+ Badge": "mstea"
+"+ Badge Label": "Xlmp7"
+"+ Shape": "deATO" (= bbId)
+"+ Shape Label": "IEnsg"
+"Layers Hint": "TX0zp"
+```
+
+## Print output
+layers-done
+
+
+OK
+
+Global variables (e.g. bdId) carry over to subsequent calls!
+
+## Created nodes by name
+Ids are strings - quote them when used in code. Entries marked `(= variable)` are also held by that global variable, usable directly in later calls:
+```
+"Template Card": "dRVOZ" (= tplId)
+"Product Photo": "OSPwn"
+"No Photo Label": "g4fvr"
+"Card Title": "W4aQ4"
+"Price Badge": "H8JB1R" (= bdId)
+"Price Label": "H5wYA0"
+"Handle": "XuCy9"
+"Handle": "wagbV"
+"Handle": "uJBZn"
+"Handle": "S4Zml"
+"Canvas Hint": "roJXI"
+```
+
+## Print output
+canvas-done
+
+
+OK
+
+Global variables (e.g. cpId) carry over to subsequent calls!
+
+## Created nodes by name
+Ids are strings - quote them when used in code. Entries marked `(= variable)` are also held by that global variable, usable directly in later calls:
+```
+"Prop Head": "O1fYNE" (= phId)
+"Prop Name": "QLFf7"
+"Type Pill": "ZphFP" (= tpId)
+"Type Label": "uNMvX"
+"Content Section": "z3qip" (= sec1Id)
+"Content Label": "D2Bvj"
+"Name Label": "nZorF"
+"Name Input": "Qq7MB" (= nmId)
+"Name Value": "DsBZl"
+"Text Label": "gWahF"
+"Text Input": "uiBjL" (= txeId)
+"Text Value": "WXZRv"
+"Chips": "PX1Y2" (= chId)
+"title Chip": "Lx1DI"
+"title Chip Label": "nzIpd"
+"price Chip": "c8Of9"
+"price Chip Label": "X5UW6y"
+"vendor Chip": "dw8dU" (= cpId)
+"vendor Chip Label": "U8CtF"
+```
+
+## Print output
+props1-done
+
+
+OK
+
+Global variables (e.g. woId) carry over to subsequent calls!
+
+## Created nodes by name
+Ids are strings - quote them when used in code. Entries marked `(= variable)` are also held by that global variable, usable directly in later calls:
+```
+"Position Section": "M5MbYp" (= sec2Id)
+"Position Label": "lQaab"
+"Pos Grid": "L2e6O" (= pgId)
+"X Field": "qVCqs"
+"X Key": "WLpYJ"
+"X Value": "aYb49"
+"Y Field": "E9pjCG"
+"Y Key": "Xxu91"
+"Y Value": "vcK7L"
+"W Field": "tFQ6Z"
+"W Key": "B1BYFq"
+"W Value": "USmu0"
+"H Field": "lgs07" (= pfId)
+"H Key": "nWTaz"
+"H Value": "wPbmn"
+"Style Section": "fGIQ9" (= sec3Id)
+"Style Label": "JsNlE"
+"BG Row": "x5n0X" (= bgId)
+"BG Swatch": "zwQLm"
+"BG Hex": "vQ0ak" (= bhId)
+"BG Value": "zhYLn"
+"Size Row": "SHhxV" (= srId)
+"Size Label": "n5JUC"
+"Size Value": "HUNgz"
+"Size Track": "iNZ6W" (= trId)
+"Track Fill": "gteAP"
+"Knob": "tCnHc"
+"Track Rest": "RhfIo"
+"Weight Label": "JHEYo"
+"Weight Seg": "nUb9H" (= wgId)
+"400 Opt": "JyIQH"
+"400 Opt Label": "ZAB5A"
+"600 Opt": "z7Apj8"
+"600 Opt Label": "Ll7Ye"
+"700 Opt": "ei1my"
+"700 Opt Label": "Lw0Z2"
+"800 Opt": "uahik" (= woId)
+"800 Opt Label": "d6tN2j"
+```
+
+## Print output
+props2-done
+
+
+[32mSaved /Users/jason/Documents/Sites/catalog-forge/designs/editor-playground.pen[39m
+
+[2mGoodbye.[22m

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import ArchitectureDiagram from "@/components/ArchitectureDiagram";
 
 export const metadata = {
   title: "Architecture — Catalog Forge (internal)",
@@ -152,6 +153,7 @@ const LIB_ROWS = [
 ];
 
 const NAV = [
+  { href: "#diagram", label: "Diagram" },
   { href: "#pipeline", label: "Pipeline" },
   { href: "#api", label: "API reference" },
   { href: "#pages", label: "Pages" },
@@ -306,6 +308,20 @@ export default function ArchitecturePage() {
 
           {/* Main */}
           <main className="min-w-0 flex-1">
+            {/* Diagram */}
+            <section id="diagram" className="scroll-mt-20">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">Visual overview</p>
+              <h2 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">Data flow diagram</h2>
+              <p className="mt-2 max-w-2xl text-[15px] text-slate-500">
+                How everything connects — hover any stage to isolate it, pause the flow anytime, and
+                hover or select the ⓘ on any box for a pop-up explanation. Numbered badges map to the
+                pipeline steps below.
+              </p>
+              <div className="mt-5">
+                <ArchitectureDiagram />
+              </div>
+            </section>
+
             {/* Pipeline */}
             <section id="pipeline" className="scroll-mt-20">
               <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">Data flow</p>

@@ -245,6 +245,6 @@ export type ProjectedImageStyle = {
 export function imageStyle(layer: Layer): ProjectedImageStyle {
   return {
     background: layer.style.background ?? MISSING_IMAGE_BACKGROUND,
-    objectFit: layer.objectFit ?? "contain",
+    objectFit: layer.objectFit ?? "cover",
   };
 }

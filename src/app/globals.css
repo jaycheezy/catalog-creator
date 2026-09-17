@@ -26,6 +26,14 @@ body {
 }
 
 /* ——— 3D phone display (homepage hero + phone lab) ——— */
+/* Registered so the living backdrop glow can crossfade between hues.
+   Unsupported browsers ignore the transition and switch instantly. */
+@property --hero-glow {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #3a5a1e;
+}
+
 @keyframes phone-floaty {
   0%, 100% { transform: translateY(-4px); }
   50% { transform: translateY(5px); }

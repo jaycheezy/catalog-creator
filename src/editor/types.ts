@@ -166,7 +166,7 @@ export function createDefaultTemplate(sizeId: string = "1:1"): Template {
         visible: true,
         locked: false,
         style: { background: "#fafaf7", borderRadius: 24, opacity: 1 },
-        objectFit: "contain",
+        objectFit: "cover",
       },
       {
         id: "layer_title",

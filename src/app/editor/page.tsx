@@ -5,10 +5,11 @@ import "@fontsource/inter/400.css";
 import "@fontsource/inter/600.css";
 import "@fontsource/inter/700.css";
 import { TemplateRenderer } from "@/editor/TemplateRenderer";
-import { EditorCanvas } from "@/editor/EditorCanvas";
+import { AllSizesCanvas, type AllSizesSheet } from "@/editor/AllSizesCanvas";
 import { LayersPanel } from "@/editor/LayersPanel";
 import { PropertiesPanel } from "@/editor/PropertiesPanel";
-import { createDefaultTemplate, SIZE_PRESETS, TEMPLATE_JSON_SCHEMA } from "@/editor/types";
+import { createDefaultTemplate, SIZE_PRESETS } from "@/editor/types";
+import { STARTER_TEMPLATES } from "@/editor/starterTemplates";
 import { adaptTemplateToSize } from "@/editor/autoLayout";
 import type { Template, Layer } from "@/editor/types";
 import type { FeedRow } from "@/lib/facebook";
@@ -20,10 +21,7 @@ import {
   parseVariantDraftId,
   placementFingerprint,
   placementView,
-  promotePlacementToMaster,
-  summarizeVariantSaves,
   variantDraftId,
-  type VariantSaveResult,
 } from "@/editor/placementState";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -50,15 +48,22 @@ const STORAGE_KEY = "catalog-forge-templates-v1";
 const DOMAIN_KEY = "catalog-forge-editor-domain";
 const AGENT_CAPABILITIES = workspaceCapabilities([...AGENT_WORKSPACE_TOOL_NAMES]);
 
+type MerchantNavTab = "design" | "products" | "elements" | "templates";
+
 export default function EditorPage() {
   const router = useRouter();
   // Resolved after hydration so the server and client first render agree.
   // Null means the query string has not been read yet; no loading starts.
   const [projectId, setProjectId] = useState<string | null>(null);
+  // Standalone homepage-slot mode (?templateId=homepage-showcase-* with no
+  // projectId): loads that template for visual editing; saves write straight
+  // back under the same id, so the homepage hero picks them up.
+  const [templateIdParam, setTemplateIdParam] = useState<string | null>(null);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setProjectId(new URLSearchParams(window.location.search).get("projectId") || "");
+    setTemplateIdParam(new URLSearchParams(window.location.search).get("templateId") || "");
   }, []);
   const [projectPlacement, setProjectPlacement] = useState<CatalogProject["placement"]>("carousel");
   const [projectError, setProjectError] = useState<string | null>(null);
@@ -73,7 +78,6 @@ export default function EditorPage() {
   const [productIdx, setProductIdx] = useState(0);
   const [loading, setLoading] = useState(false);
   const [showJson, setShowJson] = useState(false);
-  const [aiPrompt, setAiPrompt] = useState("");
   const [savedTemplates, setSavedTemplates] = useState<Record<string, SavedTemplateRecord>>({});
   const [savedPlacements, setSavedPlacements] = useState<Partial<Record<SizePresetId, SavedTemplateRecord>>>({});
   const [placementSnapshots, setPlacementSnapshots] = useState<Partial<Record<SizePresetId, Template>>>({});
@@ -95,12 +99,16 @@ export default function EditorPage() {
     workspaceRevisionReducer,
     INITIAL_WORKSPACE_REVISION,
   );
-  const [showAllSizes, setShowAllSizes] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<{ message: string; retryable: boolean } | null>(null);
   const [agentHighlightedLayerIds, setAgentHighlightedLayerIds] = useState<string[]>([]);
   const [agentReview, setAgentReview] = useState<WorkspaceReviewState | null>(null);
+  const [leftTab, setLeftTab] = useState<MerchantNavTab>("design");
   const exportRef = useRef<HTMLDivElement>(null);
+  // Sizes on the shared canvas. The canvas is the default (and only) view;
+  // the toolbar dropdown filters this list.
+  const [visibleSizes, setVisibleSizes] = useState<SizePresetId[]>(["1:1", "4:5", "9:16"]);
+  const [sizesOpen, setSizesOpen] = useState(false);
 
   const active = useMemo(() => templates.find((t) => t.id === activeId) ?? templates[0], [templates, activeId]);
   const master = useMemo(() => templates.find((t) => t.id === masterId) ?? active, [templates, masterId, active]);
@@ -126,9 +134,14 @@ export default function EditorPage() {
     && typeof window !== "undefined"
     && new URLSearchParams(window.location.search).get("webmcpProbe") === "1";
 
+  // C: keyboard-first — ⌘S saves.
+
   // Load from localStorage
   useEffect(() => {
     if (projectId === null || projectId) return;
+    // Homepage-slot mode loads its template below — never restore (or
+    // overwrite) the generic local session with it.
+    if (new URLSearchParams(window.location.search).get("templateId")) return;
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
@@ -146,6 +159,7 @@ export default function EditorPage() {
   }, [projectId]);
 
   useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("templateId")) return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(templates));
   }, [templates]);
 
@@ -237,6 +251,35 @@ export default function EditorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
+  // Homepage-slot mode: no project, ?templateId=<slot-id>. Loads the stored
+  // slot template (or its demo default via the admin page link) as the sole
+  // draft, seeded as saved so revision conflicts are detected on save.
+  useEffect(() => {
+    if (projectId === null || projectId || !templateIdParam) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLoading(true);
+    fetch(`/api/templates?id=${encodeURIComponent(templateIdParam)}`)
+      .then(async (res) => {
+        const json = (await res.json()) as Template & { error?: string };
+        if (!res.ok) throw new Error(json.error || "Could not load template");
+        setTemplates([json]);
+        setActiveId(json.id);
+        setMasterId(json.id);
+        setProductIdx(0);
+        setSaveNotice(null);
+        setSaveError(null);
+        setSavedTemplates({
+          [json.id]: {
+            templateId: json.id,
+            fingerprint: templateFingerprint(json),
+            revision: json.revision ?? 0,
+          },
+        });
+      })
+      .catch((error) => setProjectError(error instanceof Error ? error.message : String(error)))
+      .finally(() => setLoading(false));
+  }, [projectId, templateIdParam]);
+
   const markHumanDraftChange = () => {
     setAgentHighlightedLayerIds([]);
     setAgentReview(null);
@@ -287,15 +330,62 @@ export default function EditorPage() {
     dispatchWorkspaceRevision({ type: "view-changed", actor: "human" });
   };
 
-  const toggleAllSizes = () => {
-    if (agentReview) {
-      setAgentReview(null);
-      setShowAllSizes(false);
-    } else {
-      setShowAllSizes((visible) => !visible);
-    }
-    dispatchWorkspaceRevision({ type: "view-changed", actor: "human" });
+  // Every placement gets an independent draft so each sheet on the shared
+  // canvas is directly editable. Drafts seed from the saved snapshot (or a
+  // fresh master adaptation), so save state stays honest and editing one
+  // size never affects the others.
+  useEffect(() => {
+    const missing = SIZE_PRESET_IDS.filter(
+      (sizeId) => sizeId !== master.sizeId && !templates.some((t) => t.id === variantDraftId(sizeId)),
+    );
+    if (missing.length === 0) return;
+    setTemplates((prev) => {
+      const next = [...prev];
+      for (const sizeId of missing) {
+        const draftId = variantDraftId(sizeId);
+        if (next.some((t) => t.id === draftId)) continue;
+        const preset = SIZE_PRESETS.find((p) => p.id === sizeId) ?? SIZE_PRESETS[0];
+        const base = placementSnapshots[sizeId] ?? adaptTemplateToSize(master, preset);
+        next.push({ ...base, id: draftId, updatedAt: Date.now() });
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [master, placementSnapshots, templates]);
+
+  /** Update any template by id (multi-sheet canvas), not just the active one. */
+  const updateTemplateById = (id: string, next: Template) => {
+    setTemplates((prev) => prev.map((t) => (t.id === id ? { ...next, updatedAt: Date.now() } : t)));
+    markHumanDraftChange();
   };
+
+  /** Clicking a sheet makes it the active template; panels follow. */
+  const activateSheet = (templateId: string, layerId: string | null) => {
+    if (templateId !== activeId) setActiveId(templateId);
+    selectLayer(layerId);
+  };
+
+  /** Visible sheets for the shared canvas, in placement order. */
+  const allSizesSheets: AllSizesSheet[] = useMemo(() => {
+    const visible = SIZE_PRESETS.filter((p) => visibleSizes.includes(p.id as SizePresetId));
+    const presets = visible.length > 0 ? visible : SIZE_PRESETS;
+    return presets.map((preset) => {
+        const sizeId = preset.id as SizePresetId;
+        const entry = templates.find((t) => t.id === variantDraftId(sizeId));
+        const template = placementView(master, SIZE_PRESETS, sizeId, entry, placementSnapshots[sizeId]);
+        const adaptedFresh = sizeId === master.sizeId ? master : adaptTemplateToSize(master, preset);
+        const snapshot = placementSnapshots[sizeId];
+        return {
+          sizeId,
+          label: preset.label,
+          template,
+          canReset: !entry && !!snapshot && sizeId !== master.sizeId
+            && placementFingerprint(snapshot) !== placementFingerprint(adaptedFresh),
+        };
+      });
+    },
+    [master, placementSnapshots, templates, visibleSizes],
+  );
 
   const addLayer = (type: Layer["type"]) => {
     const layer: Layer = {
@@ -332,54 +422,6 @@ export default function EditorPage() {
   const deleteLayer = (id: string) => {
     updateActive({ ...active, layers: active.layers.filter((l) => l.id !== id) });
     if (selectedId === id) selectLayer(null);
-  };
-
-  const changeSize = (sizeId: string) => {
-    if (editingVariantSize) return;
-    const targetSize = sizeId as SizePresetId;
-    const promoted = promotePlacementToMaster(
-      master,
-      SIZE_PRESETS,
-      targetSize,
-      variantEntry(targetSize),
-      placementSnapshots[targetSize],
-    );
-    // The selected placement now is the master. Remove its duplicate draft so
-    // the canvas, card, and save-all candidate share one durable owner.
-    setTemplates((prev) => prev
-      .filter((template) => template.id !== variantDraftId(targetSize))
-      .map((template) => (template.id === master.id ? promoted : template)));
-    setActiveId(master.id);
-    selectLayer(null);
-    markHumanDraftChange();
-  };
-
-  const variantEntry = (sizeId: SizePresetId): Template | undefined =>
-    templates.find((t) => t.id === variantDraftId(sizeId));
-
-  /**
-   * Open one placement as an independent draft. Other placements keep
-   * rendering from the master draft, so editing here stales only this card.
-   */
-  const openVariant = (sizeId: SizePresetId) => {
-    const existing = variantEntry(sizeId);
-    if (existing) {
-      setActiveId(existing.id);
-      selectLayer(null);
-      return;
-    }
-    const preset = SIZE_PRESETS.find((p) => p.id === sizeId) ?? SIZE_PRESETS[0];
-    const base = placementSnapshots[sizeId] ?? (sizeId === master.sizeId ? master : adaptTemplateToSize(master, preset));
-    const draftId = variantDraftId(sizeId);
-    setTemplates((prev) => {
-      if (prev.some((t) => t.id === draftId)) return prev;
-      // Keep the base name: renaming the draft would make the saved snapshot
-      // look stale against a fresh adaptation after reloading.
-      const draft: Template = { ...base, id: draftId, updatedAt: Date.now() };
-      return [...prev, draft];
-    });
-    setActiveId(draftId);
-    selectLayer(null);
   };
 
   const backToMaster = () => {
@@ -464,7 +506,7 @@ export default function EditorPage() {
           placements,
         },
         view: {
-          mode: showAllSizes ? "all-sizes" : "canvas",
+          mode: "all-sizes",
           selectedProductId: product?.source_id ?? product?.id ?? null,
           selectedLayerId: selectedId,
         },
@@ -503,7 +545,6 @@ export default function EditorPage() {
     savedTemplates,
     saving,
     selectedId,
-    showAllSizes,
     templates,
     viewRevision,
   ]);
@@ -543,16 +584,15 @@ export default function EditorPage() {
   const applyAgentView = useCallback((change: WorkspaceViewChange) => {
     if (change.productIndex !== undefined) setProductIdx(change.productIndex);
     if (change.layerId !== undefined) setSelectedId(change.layerId);
+    // The shared canvas is the only view; any panel change just exits review.
     if (change.panel !== undefined) {
       setAgentReview(null);
-      setShowAllSizes(change.panel === "all-sizes");
     }
     dispatchWorkspaceRevision({ type: "view-changed", actor: "agent" });
   }, []);
 
   const applyAgentPreview = useCallback((review: WorkspaceReviewState) => {
     setAgentReview(review);
-    setShowAllSizes(true);
     dispatchWorkspaceRevision({ type: "view-changed", actor: "agent" });
   }, []);
 
@@ -589,196 +629,6 @@ export default function EditorPage() {
       })
       .catch(() => {});
   }, [router]);
-
-  const saveToServer = async () => {
-    const draft = active;
-    if (editingVariantSize) {
-      await saveVariantPlacement(editingVariantSize, draft);
-      return;
-    }
-    const savedDraft = savedTemplates[draft.id];
-    setSaving(true);
-    setSaveError(null);
-    try {
-      const res = await fetch(projectId ? "/api/projects" : "/api/templates", {
-        method: projectId ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(projectId
-          ? { id: projectId, template: draft, placement: projectPlacement, expectedRevision: projectRevision }
-          : { ...draft, expectedRevision: savedDraft?.revision ?? 0 }),
-      });
-      const json = await res.json() as {
-        error?: string;
-        retryable?: boolean;
-        templateId?: string;
-        id?: string;
-        templateRevision?: number;
-        revision?: number;
-      };
-      if (res.status === 401) {
-        router.push(`/login?next=${encodeURIComponent(`/editor${window.location.search}`)}`);
-        return;
-      }
-      if (!res.ok) {
-        setSaveError({ message: json.error || "Save failed", retryable: json.retryable !== false });
-        return;
-      }
-      const savedTemplateId = json.templateId || json.id;
-      if (!savedTemplateId) {
-        setSaveError({ message: "The server did not return the saved template id.", retryable: true });
-        return;
-      }
-      const templateRevision = Number(json.templateRevision ?? json.revision ?? 0);
-      const savedVersion = { ...draft, id: savedTemplateId, revision: templateRevision };
-      setSavedTemplates((previous) => {
-        const next = { ...previous };
-        delete next[draft.id];
-        next[savedTemplateId] = {
-          templateId: savedTemplateId,
-          fingerprint: templateFingerprint(savedVersion),
-          revision: templateRevision,
-        };
-        return next;
-      });
-      if (projectId) setProjectRevision(Number(json.revision ?? projectRevision));
-      if (savedTemplateId !== active.id) {
-        setTemplates((prev) => prev.map((t) => (t.id === draft.id ? { ...t, id: savedTemplateId, revision: templateRevision } : t)));
-        setActiveId((current) => current === draft.id ? savedTemplateId : current);
-      } else {
-        setTemplates((prev) => prev.map((t) => (t.id === draft.id ? { ...t, revision: templateRevision } : t)));
-      }
-    } catch (e) {
-      setSaveError({
-        message: e instanceof Error ? e.message : "The save could not be confirmed.",
-        retryable: true,
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  /**
-   * Save one variant per placement. Project mode is a single atomic PATCH:
-   * the server validates all four before writing, so a failure retains every
-   * draft and prior saved record. Legacy standalone mode keeps separate
-   * template writes and reports the exact per-placement outcome.
-   */
-  const saveAllVariants = async () => {
-    // Candidates follow the same lineage the cards display: open drafts,
-    // live master, saved snapshots, then fresh adaptations. What you see is
-    // what gets persisted; untouched customizations are never silently
-    // replaced by a master adaptation.
-    const candidates = SIZE_PRESET_IDS.map((sizeId) => ({
-      sizeId,
-      variant: placementView(master, SIZE_PRESETS, sizeId, variantEntry(sizeId), placementSnapshots[sizeId]),
-    }));
-    setSaving(true);
-    setSaveError(null);
-    setSaveNotice(null);
-    try {
-      if (projectId) {
-        const placementTemplates: Record<string, unknown> = {};
-        for (const { sizeId, variant } of candidates) placementTemplates[sizeId] = variant;
-        const res = await fetch("/api/projects", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          // Persist the master draft as the active template in the same
-          // atomic write so reopening restores the latest design, not the
-          // older active template.
-          body: JSON.stringify({ id: projectId, template: master, placementTemplates, expectedRevision: projectRevision }),
-        });
-        const json = await res.json() as {
-          error?: string;
-          retryable?: boolean;
-          revision?: number;
-          templateId?: string;
-          templateRevision?: number;
-          variants?: { sizeId: string; templateId: string; templateRevision: number; width: number; height: number }[];
-        };
-        if (res.status === 401) {
-          router.push(`/login?next=${encodeURIComponent(`/editor${window.location.search}`)}`);
-          return;
-        }
-        if (!res.ok) {
-          setSaveError({ message: json.error || "Could not save every size.", retryable: json.retryable !== false });
-          return;
-        }
-        const returned = new Map((json.variants ?? []).map((variant) => [variant.sizeId, variant]));
-        const next: Partial<Record<SizePresetId, SavedTemplateRecord>> = {};
-        for (const { sizeId, variant } of candidates) {
-          const confirmed = returned.get(sizeId);
-          if (!confirmed) {
-            setSaveError({ message: `The server did not confirm placement ${sizeId}. Nothing was marked saved.`, retryable: true });
-            return;
-          }
-          next[sizeId] = {
-            templateId: confirmed.templateId,
-            fingerprint: placementFingerprint(variant),
-            revision: confirmed.templateRevision,
-          };
-        }
-        setSavedPlacements(next);
-        setPlacementSnapshots(Object.fromEntries(candidates.map(({ sizeId, variant }) => [sizeId, { ...variant }])) as Partial<Record<SizePresetId, Template>>);
-        setProjectRevision(Number(json.revision ?? projectRevision));
-        const masterRevision = Number(json.templateRevision ?? 0);
-        setSavedTemplates((previous) => ({
-          ...previous,
-          [master.id]: {
-            templateId: json.templateId || master.id,
-            fingerprint: templateFingerprint(master),
-            revision: masterRevision,
-          },
-        }));
-        setTemplates((prev) => prev.map((t) => (t.id === master.id ? { ...t, revision: masterRevision } : t)));
-        setSaveNotice(`Saved all 4 placements (project revision ${Number(json.revision ?? projectRevision)}).`);
-        return;
-      }
-      const results: VariantSaveResult[] = [];
-      const next: Partial<Record<SizePresetId, SavedTemplateRecord>> = { ...savedPlacements };
-      for (const { sizeId, variant } of candidates) {
-        const toSave = { ...variant, id: undefined };
-        try {
-          const res = await fetch("/api/templates", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(toSave) });
-          const json = await res.json() as { error?: string; templateId?: string; id?: string; revision?: number };
-          if (res.status === 401) {
-            router.push(`/login?next=${encodeURIComponent(`/editor${window.location.search}`)}`);
-            return;
-          }
-          if (!res.ok) throw new Error(json.error || `Could not save ${sizeId}`);
-          const savedTemplateId = json.templateId || json.id;
-          if (!savedTemplateId) throw new Error(`No template id returned for ${sizeId}`);
-          next[sizeId] = {
-            templateId: savedTemplateId,
-            fingerprint: placementFingerprint(variant),
-            revision: Number(json.revision ?? 0),
-          };
-          results.push({ sizeId, ok: true });
-        } catch (error) {
-          results.push({ sizeId, ok: false, error: error instanceof Error ? error.message : String(error) });
-        }
-      }
-      setSavedPlacements(next);
-      const summary = summarizeVariantSaves(results);
-      if (summary.failed.length === 0) {
-        const bySize = new Map(candidates.map((candidate) => [candidate.sizeId, candidate.variant]));
-        setPlacementSnapshots((prev) => {
-          const copy = { ...prev };
-          for (const { sizeId } of candidates) copy[sizeId] = { ...(bySize.get(sizeId) as Template) };
-          return copy;
-        });
-        setSaveNotice(`Saved all ${summary.succeeded.length} size variants as separate templates. List via /api/templates?list=1`);
-      } else {
-        setSaveError({
-          message: `Saved ${summary.succeeded.length} of ${results.length}: ${summary.failed.map((failure) => `${failure.sizeId} (${failure.error})`).join(", ")}. Saved placements kept their links; retry the failed sizes.`,
-          retryable: true,
-        });
-      }
-    } catch (error) {
-      setSaveError({ message: error instanceof Error ? error.message : "Could not save every size.", retryable: true });
-    } finally {
-      setSaving(false);
-    }
-  };
 
   /**
    * Save the open per-size draft without touching other placements. The
@@ -848,6 +698,104 @@ export default function EditorPage() {
       setSaving(false);
     }
   };
+
+  const applyStarter = (starterId: string) => {
+    const starter = STARTER_TEMPLATES.find((s) => s.id === starterId);
+    if (!starter) return;
+    if (!headerSaved && !window.confirm("Replace your current design? Unsaved changes will be lost.")) return;
+    const built = starter.build(active.sizeId);
+    updateActive({ ...active, name: starter.name, background: built.background, layers: built.layers });
+    selectLayer(null);
+    setLeftTab("design");
+  };
+
+  const starterPreviews = useMemo(
+    () => STARTER_TEMPLATES.map((s) => ({ ...s, preview: s.build(active.sizeId) })),
+    [active.sizeId],
+  );
+
+  async function saveToServer() {
+    const draft = active;
+    if (editingVariantSize) {
+      await saveVariantPlacement(editingVariantSize, draft);
+      return;
+    }
+    const savedDraft = savedTemplates[draft.id];
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const res = await fetch(projectId ? "/api/projects" : "/api/templates", {
+        method: projectId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(projectId
+          ? { id: projectId, template: draft, placement: projectPlacement, expectedRevision: projectRevision }
+          : { ...draft, expectedRevision: savedDraft?.revision ?? 0 }),
+      });
+      const json = await res.json() as {
+        error?: string;
+        retryable?: boolean;
+        templateId?: string;
+        id?: string;
+        templateRevision?: number;
+        revision?: number;
+      };
+      if (res.status === 401) {
+        router.push(`/login?next=${encodeURIComponent(`/editor${window.location.search}`)}`);
+        return;
+      }
+      if (!res.ok) {
+        setSaveError({ message: json.error || "Save failed", retryable: json.retryable !== false });
+        return;
+      }
+      const savedTemplateId = json.templateId || json.id;
+      if (!savedTemplateId) {
+        setSaveError({ message: "The server did not return the saved template id.", retryable: true });
+        return;
+      }
+      const templateRevision = Number(json.templateRevision ?? json.revision ?? 0);
+      const savedVersion = { ...draft, id: savedTemplateId, revision: templateRevision };
+      setSavedTemplates((previous) => {
+        const next = { ...previous };
+        delete next[draft.id];
+        next[savedTemplateId] = {
+          templateId: savedTemplateId,
+          fingerprint: templateFingerprint(savedVersion),
+          revision: templateRevision,
+        };
+        return next;
+      });
+      if (projectId) setProjectRevision(Number(json.revision ?? projectRevision));
+      if (savedTemplateId !== active.id) {
+        setTemplates((prev) => prev.map((t) => (t.id === draft.id ? { ...t, id: savedTemplateId, revision: templateRevision } : t)));
+        setActiveId((current) => current === draft.id ? savedTemplateId : current);
+      } else {
+        setTemplates((prev) => prev.map((t) => (t.id === draft.id ? { ...t, revision: templateRevision } : t)));
+      }
+    } catch (e) {
+      setSaveError({
+        message: e instanceof Error ? e.message : "The save could not be confirmed.",
+        retryable: true,
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // C: keyboard-first — ⌘S saves.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      const k = e.key.toLowerCase();
+      if (k === "s") {
+        e.preventDefault();
+        if (!headerSaved && !saving) void saveToServer();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [headerSaved, saving, activeId]);
 
   /**
    * Publish the saved draft: freeze products, validation, and templates into
@@ -939,54 +887,6 @@ export default function EditorPage() {
     }
   };
 
-  const handleAiAssist = () => {
-    // For AI agents: copy JSON schema + current template + prompt into clipboard, simulate agent generation
-    // MVP: generate a simple variant locally based on prompt keywords
-    const p = aiPrompt.toLowerCase();
-    let patch: Partial<Template> = {};
-    if (p.includes("sale") || p.includes("badge") || p.includes("discount")) {
-      const badge: Layer = {
-        id: `layer_${Math.random().toString(36).slice(2, 7)}`,
-        type: "badge",
-        name: "Sale Badge",
-        x: 80,
-        y: 80,
-        w: 220,
-        h: 56,
-        rotation: -8,
-        z: 10,
-        visible: true,
-        locked: false,
-        style: { background: "#dc2626", color: "#fff", fontSize: 28, fontWeight: 800, borderRadius: 12, textAlign: "center", textTransform: "uppercase" },
-        content: "{{discount_pct}}% OFF",
-      };
-      updateActive({ ...active, layers: [...active.layers, badge] });
-      setAiPrompt("");
-      return;
-    }
-    if (p.includes("minimal") || p.includes("clean")) {
-      patch = { background: "#ffffff", layers: active.layers.map((l) => ({ ...l, style: { ...l.style, background: l.type === "product-image" ? "#ffffff" : l.style.background } })) } as Partial<Template>;
-      updateActive(patch as Template);
-      setAiPrompt("");
-      return;
-    }
-    if (p.includes("dark") || p.includes("premium")) {
-      patch = {
-        background: "#0a0a0a",
-        layers: active.layers.map((layer) => layer.id === "layer_title"
-          ? { ...layer, style: { ...layer.style, color: "#fafafa" } }
-          : layer),
-      };
-      updateActive({ ...active, ...patch });
-      setAiPrompt("");
-      return;
-    }
-    // fallback: copy schema + template to clipboard for real AI agent
-    const payload = `You are a CatalogForge AI designer. Edit this Template JSON per instruction.\n\nSCHEMA: ${JSON.stringify(TEMPLATE_JSON_SCHEMA, null, 2)}\n\nTEMPLATE: ${JSON.stringify(active, null, 2)}\n\nINSTRUCTION: ${aiPrompt}\n\nReturn only valid JSON matching schema. Bindings allowed: {{title}}, {{price}}, {{discount_pct}}, {{vendor}}.`;
-    navigator.clipboard.writeText(payload);
-    alert("Prompt + schema + template copied to clipboard. Paste to your AI agent (ChatGPT/Claude) and paste returned JSON via 'Import JSON'.");
-  };
-
   const importJson = (text: string) => {
     try {
       const parsed = JSON.parse(text) as Template;
@@ -1002,46 +902,56 @@ export default function EditorPage() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-900 flex flex-col">
-      <header className="border-b bg-white sticky top-0 z-20">
-        <div className="max-w-[1600px] mx-auto px-4 py-3 flex items-center gap-4">
-          <Link href="/" className="font-semibold tracking-tight">Catalog Forge</Link>
-          <span className="text-zinc-300">/</span>
-          <span className="text-sm font-medium">Editor (HTML)</span>
-          {process.env.NODE_ENV !== 'production' && <a href="/story-map" className="ml-2 text-xs px-2 py-1 border rounded">Story Map</a>}
+    <div className="h-screen text-zinc-900 flex flex-col overflow-hidden" style={{ background: "#fbfaf6", color: "#191712" }}>
+      <header className="border-b sticky top-0 z-20 bg-white shrink-0" style={{ borderColor: "#e9e4d6" }}>
+        <div className="max-w-[1600px] mx-auto px-4 py-2.5 flex items-center gap-3">
+          <Link href="/" className="flex items-center gap-2 font-bold tracking-tight text-[17px]">
+            <svg viewBox="0 0 24 24" className="w-6 h-6 shrink-0" aria-hidden="true">
+              <path d="M12 2.5c-4.5 4.2-6.5 8.6-6.5 13 4.4 0 8.8-2 13-6.5-1.5-3.2-3.6-5.2-6.5-6.5Z" fill="#3a5a1e" />
+              <path d="M12 2.5c.4 5.3-.8 10.3-3.4 14.4" stroke="#fbfaf6" strokeWidth="1.4" strokeLinecap="round" fill="none" />
+              <circle cx="17.5" cy="17.5" r="2.6" fill="#7a9b4f" />
+            </svg>
+            Catalog Forge
+          </Link>
+          {!projectId ? (
+            <div className="flex items-center gap-2">
+              <input value={domain} onChange={(e) => setDomain(e.target.value)} disabled={Boolean(projectId)} aria-label="Store domain" className="border rounded-[10px] px-3 py-2 text-[13px] w-48 bg-white disabled:bg-zinc-50" style={{ borderColor: "#e9e4d6" }} />
+              <button onClick={fetchProducts} disabled={loading} className="px-4 min-h-[40px] rounded-[10px] text-white text-[13px] font-semibold disabled:opacity-50" style={{ background: "#3a5a1e" }}>{loading ? "…" : "Load"}</button>
+            </div>
+          ) : (
+            <span className="hidden sm:inline-flex items-center text-[13px] px-3 py-2 rounded-[10px] border bg-white text-zinc-700" style={{ borderColor: "#e9e4d6" }}>{projectContext?.name ?? domain}</span>
+          )}
+          <span
+            className="hidden md:inline-flex items-center gap-1.5 text-[12px] px-2.5 py-1.5 rounded-full border"
+            style={{ borderColor: headerSaved ? "#bbd39e" : "#e9e4d6", background: headerSaved ? "#f0f7e8" : "#fff" }}
+            title={headerSaved ? "All changes saved" : "Unsaved changes"}
+          >
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: headerSaved ? "#3a5a1e" : "#d97706" }} />
+            {saving ? "Saving…" : headerSaved ? "Saved ✓" : "Unsaved"}
+          </span>
           <div className="ml-auto flex items-center gap-2">
-            <div className="hidden sm:flex items-center gap-2 text-xs">
-              <span className="text-zinc-500">{projectId ? "Source" : "Domain"}</span>
-              <input value={domain} onChange={(e) => setDomain(e.target.value)} disabled={Boolean(projectId)} className="border rounded px-2 py-1 font-mono text-xs w-44 disabled:bg-zinc-50" />
-              {!projectId && <button onClick={fetchProducts} disabled={loading} className="px-3 py-1 bg-zinc-900 text-white rounded text-xs disabled:opacity-50">{loading ? "..." : "Load"}</button>}
-            </div>
-            <select
-              value={active.sizeId}
-              onChange={(e) => changeSize(e.target.value)}
-              disabled={Boolean(editingVariantSize)}
-              title={editingVariantSize ? "Return to the master before switching its size" : "Switch the master size"}
-              className="border rounded px-2 py-1 text-xs disabled:opacity-50"
-            >
-              {SIZE_PRESETS.map((s) => (
-                <option key={s.id} value={s.id}>{s.label}</option>
-              ))}
-            </select>
-            <button onClick={toggleAllSizes} className={`px-2 py-1 border rounded text-xs ${showAllSizes ? "bg-violet-600 text-white" : "bg-white"}`}>{showAllSizes ? "Single" : "All sizes"}</button>
-            <div className="flex items-center gap-1 border rounded px-2 py-1 text-xs">
-              <button onClick={() => setScale((s) => Math.max(0.2, s - 0.05))} className="px-1">−</button>
-              <span className="font-mono w-10 text-center">{Math.round(scale * 100)}%</span>
-              <button onClick={() => setScale((s) => Math.min(1, s + 0.05))} className="px-1">+</button>
-            </div>
-            <button onClick={exportJson} className="hidden sm:inline-flex px-3 py-1.5 border rounded text-xs">Export JSON</button>
+            <button onClick={exportJson} className="hidden lg:inline-flex px-4 min-h-[40px] items-center border rounded-[10px] text-[13px] bg-white hover:border-zinc-500" style={{ borderColor: "#e9e4d6" }}>JSON</button>
             <button
               onClick={saveToServer}
               disabled={saving || headerSaved || saveError?.retryable === false}
-              className={`px-3 py-1.5 border rounded text-xs disabled:opacity-70 ${headerSaved ? "bg-green-50 border-green-300 text-green-800" : "bg-white"}`}
+              className="px-4 min-h-[40px] border rounded-[10px] text-[13px] font-semibold disabled:opacity-60 bg-white"
+              style={{ borderColor: headerSaved ? "#bbd39e" : "#191712", background: headerSaved ? "#f0f7e8" : "#fff", color: "#191712" }}
             >
               {saving ? "Saving…" : headerSaved ? "Saved ✓" : saveError?.retryable ? "Retry save" : saveError ? "Reload required" : savedTemplate ? "Save changes" : "Save to Server"}
             </button>
-            <button onClick={handleExportPng} className="px-3 py-1.5 bg-zinc-900 text-white rounded text-xs">Export PNG</button>
+            <button onClick={handleExportPng} className="px-5 min-h-[44px] rounded-[10px] text-sm font-bold text-white flex items-center gap-2" style={{ background: "#3a5a1e" }}>
+              <svg viewBox="0 0 16 16" fill="none" className="w-4 h-4" aria-hidden="true">
+                <path d="M8 1.5v8.5m0 0L5 7M8 10l3-3M2.5 12.5v1a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2v-1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Export PNG
+            </button>
           </div>
+        </div>
+        <div className="max-w-[1600px] mx-auto px-4 pb-2 flex items-center gap-2 text-[11px] text-zinc-400">
+          {templateIdParam && !projectId && (
+            <span>Homepage slot → saving updates the hero · <Link href="/admin" className="underline underline-offset-2">back to Admin</Link></span>
+          )}
+          {process.env.NODE_ENV !== 'production' && <a href="/story-map" className="ml-auto text-[11px] px-2 py-1 rounded-full text-zinc-400 hover:text-zinc-600">Story Map</a>}
         </div>
       </header>
 
@@ -1072,160 +982,236 @@ export default function EditorPage() {
       )}
 
       <div className="flex flex-1 min-h-0">
-        {/* Left layers */}
-        <div className="w-[280px] border-r bg-white hidden lg:flex flex-col shrink-0">
-          <LayersPanel
-            template={active}
-            selectedId={selectedId}
-            highlightedIds={agentHighlightedLayerIds}
-            onSelect={selectLayer}
-            onUpdate={(t) => updateActive(t)}
-            onAdd={addLayer}
-            onDelete={deleteLayer}
-            onDuplicate={duplicateLayer}
-          />
-        </div>
-
-        {/* Center canvas */}
-        <div className="flex-1 flex flex-col min-w-0 bg-zinc-100">
-          {editingVariantSize && (
-            <div className="bg-amber-50 border-b px-4 py-1.5 flex gap-2 items-center text-xs">
-              <span>Editing the {editingVariantSize} variant independently — other placements are unaffected.</span>
-              <button onClick={backToMaster} className="ml-auto px-2 py-1 border rounded bg-white">Back to master</button>
-            </div>
-          )}
-          {/* AI assist bar */}
-          <div className="bg-white border-b px-4 py-2 flex gap-2 items-center">
-            <span className="text-xs font-medium shrink-0">AI Assist</span>
-            <input
-              value={aiPrompt}
-              onChange={(e) => setAiPrompt(e.target.value)}
-              placeholder='Try: "add red sale badge" or "make dark premium" or describe any design'
-              className="flex-1 border rounded px-3 py-1.5 text-sm"
-            />
-            <button onClick={handleAiAssist} className="px-3 py-1.5 bg-violet-600 text-white rounded text-xs font-medium">Generate</button>
-            <button onClick={() => setShowJson(!showJson)} className="px-3 py-1.5 border rounded text-xs">{showJson ? "Hide JSON" : "Copy JSON"}</button>
-          </div>
-
-          {showAllSizes && agentReview ? (
-            <AgentReviewGrid review={agentReview} products={products} onClose={closeAgentReview} />
-          ) : showAllSizes ? (
-            <div className="flex-1 overflow-auto p-4 bg-zinc-100">
-              <div className="text-xs text-zinc-600 mb-3 flex items-center gap-2">
-                <span>Auto-layout preview — same design adapted to every placement. Bottom-anchored title/price stay fixed, product image stretches.</span>
-                <button
-                  onClick={saveAllVariants}
-                  disabled={saving}
-                  className="ml-auto text-[11px] px-2 py-1 bg-zinc-900 text-white rounded"
-                >
-                  Save all 4 variants
-                </button>
-                {saveNotice && <span className="text-[11px] px-2 py-0.5 bg-green-100 border border-green-200 rounded">{saveNotice}</span>}
-                <span className="text-[11px] px-2 py-0.5 bg-green-100 border border-green-200 rounded">Active: {active.sizeId} is master</span>
-              </div>
-              <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-                {SIZE_PRESETS.map((preset) => {
-                  const sizeId = preset.id as SizePresetId;
-                  const entry = variantEntry(sizeId);
-                  const snapshot = placementSnapshots[sizeId];
-                  const variant = placementView(master, SIZE_PRESETS, sizeId, entry, snapshot);
-                  const previewScale = preset.id === "9:16" ? 0.22 : preset.id === "4:5" ? 0.26 : preset.id === "1.91:1" ? 0.24 : 0.28;
-                  const placementRecord = savedPlacements[sizeId];
-                  const placementSaved = isPlacementSaved(master, SIZE_PRESETS, sizeId, placementRecord?.fingerprint, variant);
-                  const placementPng = placementSaved && placementRecord && product
-                    ? projectId
-                      ? previewRenderLink(placementRecord.templateId)
-                      : buildRenderUrl(placementRecord.templateId, domain, product)
-                    : null;
-                  const isEditingCard = entry ? activeId === entry.id : (!editingVariantSize && preset.id === active.sizeId);
-                  const adaptedFresh = sizeId === master.sizeId ? master : adaptTemplateToSize(master, preset);
-                  const canReset = !entry && snapshot && sizeId !== master.sizeId
-                    && placementFingerprint(snapshot) !== placementFingerprint(adaptedFresh);
-                  return (
-                    <div key={preset.id} className="bg-white rounded-lg border p-3 flex flex-col items-center">
-                      <div className="text-xs font-medium mb-2 flex items-center gap-2">
-                        <span>{preset.label}</span>
-                        {isEditingCard && <span className="text-[10px] px-1.5 py-0.5 bg-zinc-900 text-white rounded">editing</span>}
-                      </div>
-                      <div className="border bg-zinc-50 overflow-hidden" style={{ width: variant.width * previewScale, height: variant.height * previewScale }}>
-                        <TemplateRenderer template={variant} product={product} scale={previewScale} />
-                      </div>
-                      <div className="text-[11px] text-zinc-500 mt-2">{variant.width}×{variant.height}</div>
-                      {placementPng ? (
-                        <a href={placementPng} target="_blank" className="text-[11px] text-blue-600 underline mt-1">PNG</a>
-                      ) : placementRecord ? (
-                        <span className="text-[11px] text-amber-700 mt-1">Stale — save again</span>
+        {/* Left rail + contextual panel */}
+        <div className="hidden lg:flex shrink-0 min-h-0" style={{ background: "#fdfcf8" }}>
+          <nav aria-label="Primary" className="w-[76px] border-r flex flex-col items-stretch py-3 gap-1 shrink-0" style={{ borderColor: "#e9e4d6" }}>
+            {([
+              { id: "design", label: "Design", glyph: (<svg viewBox="0 0 16 16" fill="none" className="w-5 h-5" aria-hidden="true"><path d="M3.5 12.5 11 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /><path d="M12.6 1.6c.2 1.5 1.1 2.4 2.6 2.6-1.5.2-2.4 1.1-2.6 2.6-.2-1.5-1.1-2.4-2.6-2.6 1.5-.2 2.4-1.1 2.6-2.6Z" fill="currentColor" /><path d="M9.4 8.2c.1.9.7 1.5 1.6 1.6-.9.1-1.5.7-1.6 1.6-.1-.9-.7-1.5-1.6-1.6.9-.1 1.5-.7 1.6-1.6Z" fill="currentColor" /></svg>) },
+              { id: "products", label: "Products", glyph: (<svg viewBox="0 0 16 16" fill="none" className="w-5 h-5" aria-hidden="true"><path d="M8 1.5 14 4.8v6.4L8 14.5 2 11.2V4.8L8 1.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /><path d="M2 4.8 8 8l6-3.2M8 8v6.5" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>) },
+              { id: "elements", label: "Elements", glyph: (<svg viewBox="0 0 16 16" fill="none" className="w-5 h-5" aria-hidden="true"><path d="M8 2.5v11M2.5 8h11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>) },
+              { id: "templates", label: "Templates", glyph: (<svg viewBox="0 0 16 16" fill="none" className="w-5 h-5" aria-hidden="true"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.2" stroke="currentColor" strokeWidth="1.5" /><rect x="9" y="1.5" width="5.5" height="5.5" rx="1.2" stroke="currentColor" strokeWidth="1.5" /><rect x="1.5" y="9" width="5.5" height="5.5" rx="1.2" stroke="currentColor" strokeWidth="1.5" /><rect x="9" y="9" width="5.5" height="5.5" rx="1.2" stroke="currentColor" strokeWidth="1.5" /></svg>) },
+            ] as const).map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setLeftTab(tab.id)}
+                aria-pressed={leftTab === tab.id}
+                className={`mx-2 min-h-[56px] rounded-[12px] border flex flex-col items-center justify-center gap-1 py-2 text-[12px] font-medium ${leftTab === tab.id ? "text-white" : "bg-white text-zinc-700"}`}
+                style={leftTab === tab.id ? { background: "#3a5a1e", borderColor: "#3a5a1e" } : { borderColor: "#e9e4d6" }}
+              >
+                {tab.glyph}
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+          <div className="w-[300px] border-r flex-col shrink-0 hidden lg:flex min-h-0 min-w-0" style={{ borderColor: "#e9e4d6", background: "#fdfcf8" }}>
+            {leftTab === "design" && (
+              <LayersPanel
+                template={active}
+                selectedId={selectedId}
+                highlightedIds={agentHighlightedLayerIds}
+                onSelect={selectLayer}
+                onUpdate={(t) => updateActive(t)}
+                onAdd={addLayer}
+                onDelete={deleteLayer}
+                onDuplicate={duplicateLayer}
+              />
+            )}
+            {leftTab === "products" && (
+              <div className="flex flex-col flex-1 min-h-0 overflow-y-auto p-4 gap-3">
+                <div>
+                  <div className="text-[15px] font-semibold">Products</div>
+                  <div className="text-[12px] text-zinc-500">Pick a product to preview in your creative.</div>
+                </div>
+                <div className="flex-1 overflow-auto space-y-2">
+                  {products.slice(0, 50).map((p, idx) => (
+                    <button
+                      key={p.id}
+                      onClick={() => selectProduct(idx)}
+                      className="w-full min-h-[56px] flex items-center gap-3 p-2 rounded-[12px] border bg-white text-left"
+                      style={{ borderColor: idx === productIdx ? "#3a5a1e" : "#e9e4d6", background: idx === productIdx ? "#f3f6ec" : "#fff" }}
+                    >
+                      {p.image_link ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={p.image_link} alt="" className="w-10 h-10 rounded-[10px] object-cover bg-zinc-100 shrink-0" />
                       ) : (
-                        <span className="text-[11px] text-zinc-400 mt-1">Not saved</span>
+                        <span className="w-10 h-10 rounded-[10px] bg-zinc-100 flex items-center justify-center text-[11px] shrink-0">—</span>
                       )}
-                      {entry && activeId === entry.id ? (
-                        <span className="text-[11px] text-zinc-500 mt-1">Editing this variant</span>
-                      ) : sizeId === master.sizeId && !entry ? null : (
-                        <button onClick={() => openVariant(sizeId)} className="text-[11px] text-zinc-600 underline mt-1">
-                          {entry ? "Resume variant edit" : "Edit this size"}
-                        </button>
-                      )}
-                      {canReset && (
-                        <button onClick={() => resetVariant(sizeId)} className="text-[11px] text-zinc-500 underline mt-1">
-                          Reset to master
-                        </button>
-                      )}
+                      <span className="flex-1 min-w-0">
+                        <span className="block truncate text-[13px] font-medium">{p.title}</span>
+                        <span className="block text-[12px] text-zinc-500 font-mono">{p.price}</span>
+                      </span>
+                    </button>
+                  ))}
+                  {products.length === 0 && <span className="text-[12px] text-zinc-500">No products — load a store above.</span>}
+                </div>
+                <div className="text-[11px] text-zinc-400">{products.length ? `${productIdx + 1} / ${products.length} selected` : "0 products"}</div>
+              </div>
+            )}
+            {leftTab === "elements" && (
+              <div className="flex flex-col flex-1 min-h-0 overflow-y-auto p-4 gap-3">
+                <div>
+                  <div className="text-[15px] font-semibold">Elements</div>
+                  <div className="text-[12px] text-zinc-500">Add text, badges, and shapes to your creative.</div>
+                </div>
+                <button onClick={() => addLayer("text")} className="w-full min-h-[48px] rounded-[12px] border bg-white text-[14px] font-medium" style={{ borderColor: "#e9e4d6" }}>＋ Add text</button>
+                <button onClick={() => addLayer("badge")} className="w-full min-h-[48px] rounded-[12px] text-[14px] font-semibold text-white" style={{ background: "#3a5a1e" }}>＋ Add badge</button>
+                <button onClick={() => addLayer("shape")} className="w-full min-h-[48px] rounded-[12px] border bg-white text-[14px] font-medium" style={{ borderColor: "#e9e4d6" }}>＋ Add shape</button>
+                <div className="text-[11px] text-zinc-400">Tip: drag on canvas to move, corners to resize. {"{{price}}"} updates per product.</div>
+              </div>
+            )}
+            {leftTab === "templates" && (
+              <div className="flex flex-col flex-1 min-h-0 overflow-y-auto p-4 gap-3">
+                <div>
+                  <div className="text-[15px] font-semibold">Templates</div>
+                  <div className="text-[12px] text-zinc-500">Pick a starting point — your product fills in automatically.</div>
+                </div>
+                {starterPreviews.map(({ id, name, blurb, preview }) => {
+                  const thumbScale = 236 / preview.width;
+                  return (
+                    <div key={id} className="rounded-[12px] border bg-white p-2.5" style={{ borderColor: "#e9e4d6" }}>
+                      <div className="border overflow-hidden rounded-[10px] mx-auto" style={{ borderColor: "#e9e4d6", width: preview.width * thumbScale, height: preview.height * thumbScale }}>
+                        <TemplateRenderer template={preview} product={product} scale={thumbScale} />
+                      </div>
+                      <div className="mt-2 text-[13px] font-semibold">{name}</div>
+                      <div className="text-[12px] text-zinc-500">{blurb}</div>
+                      <button onClick={() => applyStarter(id)} className="mt-2 w-full min-h-[44px] rounded-[10px] text-[13px] font-semibold text-white" style={{ background: "#3a5a1e" }}>
+                        Use this design
+                      </button>
                     </div>
                   );
                 })}
+                <div className="text-[11px] text-zinc-400">Applying replaces the current design. Unsaved changes ask first.</div>
               </div>
-              <div className="mt-3 text-[11px] text-zinc-500">Tip: Switch the master size via the dropdown — layers keep their distance from bottom (price/badge) and stretch the product image automatically.</div>
+            )}
+          </div>
+        </div>
+
+        {/* Center canvas */}
+        <div className="flex-1 flex flex-col min-w-0 min-h-0" style={{ background: "#f4f1ea" }}>
+          {/* Canvas stage — toolbar hovers over the canvas, no top padding */}
+          <div className="relative flex-1 min-h-0 overflow-hidden">
+            <div className="absolute top-3 left-4 right-4 z-10 flex items-center gap-2 pointer-events-none">
+              <div className="pointer-events-auto relative">
+                <button
+                  onClick={() => setSizesOpen((open) => !open)}
+                  aria-expanded={sizesOpen}
+                  aria-haspopup="true"
+                  title="Choose which sizes are visible on the canvas"
+                  className="flex items-center gap-2 bg-white/80 backdrop-blur border rounded-[12px] pl-3 pr-3 py-1.5 shadow-sm min-h-[52px] text-[13px] font-medium"
+                  style={{ borderColor: "#e9e4d6" }}
+                >
+                  Sizes · {visibleSizes.length}
+                  <span className="text-zinc-400 text-[11px]" aria-hidden="true">{sizesOpen ? "▲" : "▼"}</span>
+                </button>
+                {sizesOpen && (
+                  <>
+                    <div
+                      className="pointer-events-auto fixed inset-0 z-10"
+                      onClick={() => setSizesOpen(false)}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      aria-hidden="true"
+                    />
+                    <div
+                      className="absolute left-0 top-full mt-2 z-20 w-[260px] rounded-[12px] border bg-white/95 backdrop-blur shadow-lg p-1.5"
+                      style={{ borderColor: "#e9e4d6" }}
+                      role="menu"
+                      aria-label="Visible sizes"
+                      onPointerDown={(e) => e.stopPropagation()}
+                    >
+                      {SIZE_PRESETS.map((s) => {
+                        const sizeId = s.id as SizePresetId;
+                        const checked = visibleSizes.includes(sizeId);
+                        const isLast = checked && visibleSizes.length === 1;
+                        return (
+                          <label
+                            key={s.id}
+                            className={`flex items-center gap-2.5 px-2.5 py-2 rounded-[10px] text-[13px] ${isLast ? "opacity-50" : "cursor-pointer hover:bg-zinc-100"}`}
+                            title={isLast ? "At least one size must stay visible" : undefined}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={isLast}
+                              onChange={() => {
+                                setVisibleSizes((prev) => {
+                                  const next = prev.includes(sizeId)
+                                    ? prev.filter((id) => id !== sizeId)
+                                    : SIZE_PRESET_IDS.filter((id) => id === sizeId || prev.includes(id));
+                                  return next.length > 0 ? next : prev;
+                                });
+                                dispatchWorkspaceRevision({ type: "view-changed", actor: "human" });
+                              }}
+                              className="w-4 h-4 accent-[#3a5a1e]"
+                            />
+                            <span className="font-medium">{s.label}</span>
+                          </label>
+                        );
+                      })}
+                      <div className="flex gap-2 mt-1 pt-1.5 border-t" style={{ borderColor: "#e9e4d6" }}>
+                        <button
+                          onClick={() => setVisibleSizes([...SIZE_PRESET_IDS])}
+                          className="flex-1 py-1.5 text-[12px] rounded-[8px] hover:bg-zinc-100 text-zinc-600"
+                        >
+                          Show all
+                        </button>
+                        <button
+                          onClick={() => setVisibleSizes(["1:1", "4:5", "9:16"])}
+                          className="flex-1 py-1.5 text-[12px] rounded-[8px] hover:bg-zinc-100 text-zinc-600"
+                        >
+                          Reset default
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+              {editingVariantSize && (
+                <button
+                  onClick={backToMaster}
+                  title="Return to the master template"
+                  className="pointer-events-auto px-4 min-h-[40px] rounded-[10px] border text-[13px] bg-white/80 backdrop-blur shadow-sm"
+                  style={{ borderColor: "#e9e4d6" }}
+                >
+                  ← Master
+                </button>
+              )}
+              <button onClick={() => setShowJson(!showJson)} className={`pointer-events-auto px-4 min-h-[40px] rounded-[10px] border text-[13px] bg-white/80 backdrop-blur shadow-sm ${showJson ? "font-semibold" : ""}`} style={{ borderColor: "#e9e4d6" }}>JSON</button>
+            </div>
+
+          {agentReview ? (
+            <div className="absolute inset-0 overflow-auto pt-16 flex flex-col">
+              <AgentReviewGrid review={agentReview} products={products} onClose={closeAgentReview} />
             </div>
           ) : (
-            <EditorCanvas
-              template={active}
-              product={product}
-              scale={scale}
-              selectedId={selectedId}
-              onSelect={selectLayer}
-              onUpdate={(t) => updateActive(t)}
-            />
+            <div className="absolute inset-0 overflow-hidden">
+              <AllSizesCanvas
+                sheets={allSizesSheets}
+                product={product}
+                scale={scale}
+                activeId={activeId}
+                selectedId={selectedId}
+                onScaleChange={setScale}
+                onActivateSheet={activateSheet}
+                onUpdateSheet={updateTemplateById}
+                onResetSheet={resetVariant}
+              />
+              {saveNotice && (
+                <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 z-10 text-[11px] px-3 py-1.5 bg-green-100 border border-green-200 rounded-full whitespace-nowrap">
+                  {saveNotice}
+                </div>
+              )}
+            </div>
           )}
+          </div>
 
           {/* Hidden export node at 1:1 scale for raster */}
           <div ref={exportRef} className="fixed left-[-9999px] top-0">
             <TemplateRenderer template={active} product={product} scale={1} />
           </div>
-
-          {/* Product strip */}
-          <div className="bg-white border-t p-3">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs font-medium">Preview product</span>
-              <span className="text-xs text-zinc-500">{products.length ? `${productIdx + 1} / ${products.length}` : "No products — load store.gibun.at"}</span>
-              <div className="ml-auto flex gap-1">
-                <button disabled={productIdx === 0} onClick={() => selectProduct(Math.max(0, productIdx - 1))} className="px-2 py-1 border rounded text-xs disabled:opacity-30">Prev</button>
-                <button disabled={productIdx >= products.length - 1} onClick={() => selectProduct(productIdx + 1)} className="px-2 py-1 border rounded text-xs disabled:opacity-30">Next</button>
-              </div>
-            </div>
-            <div className="flex gap-2 overflow-auto pb-1">
-              {products.slice(0, 20).map((p, idx) => (
-                <button
-                  key={p.id}
-                  onClick={() => selectProduct(idx)}
-                  className={`shrink-0 w-20 border rounded overflow-hidden bg-white ${idx === productIdx ? "ring-2 ring-blue-500" : ""}`}
-                  title={p.title}
-                >
-                  {p.image_link ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={p.image_link} alt="" className="w-full h-20 object-contain bg-zinc-50" />
-                  ) : (
-                    <div className="w-full h-20 bg-zinc-100 flex items-center justify-center text-[10px] text-zinc-400">No image</div>
-                  )}
-                  <div className="text-[10px] p-1 truncate text-left">{p.title}</div>
-                  <div className="text-[10px] px-1 pb-1 font-mono text-left">{p.price}</div>
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
 
         {/* Right properties */}
-        <div className="w-[320px] border-l bg-white hidden xl:block shrink-0 overflow-auto">
+        <div className="w-[320px] border-l hidden xl:block shrink-0 overflow-auto min-h-0" style={{ borderColor: "#e9e4d6", background: "#fdfcf8" }}>
           <PropertiesPanel
             template={active}
             selectedId={selectedId}
@@ -1235,10 +1221,11 @@ export default function EditorPage() {
           {showJson && (
             <div className="border-t p-3 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-medium">Template JSON (AI-friendly)</span>
+                <span className="text-xs font-semibold">Template JSON (AI-friendly)</span>
                 <button
                   onClick={() => navigator.clipboard.writeText(JSON.stringify(active, null, 2))}
-                  className="text-xs px-2 py-1 border rounded"
+                  className="text-xs px-2.5 py-1 border rounded-full bg-white"
+                  style={{ borderColor: "#e9e4d6" }}
                 >
                   Copy
                 </button>
@@ -1247,27 +1234,31 @@ export default function EditorPage() {
                 value={JSON.stringify(active, null, 2)}
                 readOnly
                 rows={12}
-                className="w-full border rounded p-2 font-mono text-[11px] bg-zinc-50"
+                className="w-full border rounded-2xl p-2.5 font-mono text-[11px]"
+                style={{ borderColor: "#e9e4d6", background: "#f6f2e8" }}
               />
               <div className="text-[11px] text-zinc-500">Agents: edit this JSON and paste below to import. Bindings: {`{{title}} {{price}} {{discount_pct}} {{vendor}}`}</div>
               <textarea
                 placeholder="Paste AI-returned JSON here then press Import"
                 rows={4}
-                className="w-full border rounded p-2 font-mono text-xs"
+                className="w-full border rounded-2xl p-2.5 font-mono text-xs bg-white"
+                style={{ borderColor: "#e9e4d6" }}
                 onKeyDown={(e) => {
                   if ((e.metaKey || e.ctrlKey) && e.key === "Enter") importJson((e.target as HTMLTextAreaElement).value);
                 }}
                 id="import-json"
               />
-              <button onClick={() => importJson((document.getElementById("import-json") as HTMLTextAreaElement)?.value ?? "")} className="w-full py-1.5 bg-zinc-900 text-white rounded text-xs">Import JSON</button>
+              <button onClick={() => importJson((document.getElementById("import-json") as HTMLTextAreaElement)?.value ?? "")} className="w-full py-2 text-white rounded-full text-xs font-semibold" style={{ background: "#191712" }}>Import JSON</button>
             </div>
           )}
         </div>
       </div>
 
+      {/* Feed + template footer zone — capped so the workspace keeps the viewport */}
+      <div className="shrink-0 overflow-y-auto max-h-[28vh] min-h-0">
       {/* Mobile layers/properties drawers */}
-      <div className="lg:hidden border-t bg-white p-3 flex gap-2 overflow-auto text-xs">
-        <span className="font-medium">Tip:</span> Open on desktop for full layers + properties. Mobile supports drag + AI prompts.
+      <div className="lg:hidden border-t p-3 flex gap-2 overflow-auto text-xs bg-white" style={{ borderColor: "#e9e4d6" }}>
+        <span className="font-medium">Tip:</span> Open on desktop for full layers + properties.
       </div>
 
       {/* Published feed bar (project mode) or enriched feed bar (legacy mode) */}
@@ -1385,34 +1376,6 @@ export default function EditorPage() {
         )
       )}
 
-      {/* Size + feed preview bar */}
-      <div className="bg-white border-t px-4 py-3 flex items-center gap-4">
-        <div className="text-xs text-zinc-600">HTML templates double as ad creatives — no canvas lib. {isSaved ? "This revision is saved — use Enriched Feed above." : savedTemplate ? "This design has unsaved changes; save before using server output." : "Save to Server to enable enriched feed (image_link → /api/render)."}</div>
-        <div className="ml-auto flex gap-2">
-          <div className="hidden sm:flex items-center gap-2">
-            {SIZE_PRESETS.map((s) => (
-              <button key={s.id} onClick={() => changeSize(s.id)} className={`px-2 py-1 rounded text-xs border ${active.sizeId === s.id ? "bg-zinc-900 text-white" : "bg-white"}`}>{s.id}</button>
-            ))}
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-zinc-500 hidden sm:inline">Live templates: {templates.length}</span>
-            {!projectId && (
-              <button
-                onClick={() => {
-                  const t = createDefaultTemplate(active.sizeId);
-                  setTemplates((p) => [...p, t]);
-                  setActiveId(t.id);
-                  markHumanDraftChange();
-                  dispatchWorkspaceRevision({ type: "view-changed", actor: "human" });
-                  setSaveError(null);
-                }}
-                className="px-3 py-1 border rounded text-xs"
-              >
-                New Template
-              </button>
-            )}
-          </div>
-        </div>
       </div>
     </div>
   );
